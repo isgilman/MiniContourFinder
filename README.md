@@ -9,3 +9,8 @@ Perhaps the most striking features of (well-known) CAM plants is their unique mo
   - Aim for something around around 128x128
 - Marking/annotating images
   - Get images with just stains
+
+
+## Papers
+- Cell Detection in Microscopy Images with Deep Convolutional Neural Network and Compressed Sensing
+https://arxiv.org/pdf/1708.03307.pdf
