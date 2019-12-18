@@ -1,2 +1,2 @@
 # Files too large for LFS
-Data/large_files
+Data/large_files/*
