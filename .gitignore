@@ -1,4 +1,2 @@
 # Files too large for LFS
-Data/Calindrinia/C_volubilis_JAH194_A16_LD_1778_24_step2.tif 
-Data/Calindrinia/C_pumila_lph173_A16_LD_1778_20_step2.tif
-
+Data/large_files/*
