@@ -1,0 +1,20 @@
+name: comp_vision
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.6
+  - scipy
+  - tqdm
+  - pandas
+  - matplotlib
+  - opencv
+  - pydrive
+  - pytesseract
+  - imutils
+  - scikit-image
+  - scikit-learn
+  - ipykernel
+  - jupyter
+prefix: C:\Users\jonko\Anaconda3\envs\comp_vision
+
