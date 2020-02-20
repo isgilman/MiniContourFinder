@@ -21,7 +21,6 @@ except ImportError:
     sys.exit()
 # plotting
 import matplotlib.pyplot as plt
-from matplotlib.lines import Line2D
 # image recognition
 try: import cv2
 except ImportError:
@@ -59,7 +58,6 @@ def flatten(l):
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def flood_fill(image):
     """Flood fill from the edges."""
-
     mirror = image.copy()
     height, width = image.shape[:2]
     for row in range(height):
@@ -89,7 +87,7 @@ def store_evolution_in(lst):
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradient=3, k_foreground=7,
-        extract_border=False, debug=False):
+        extract_border=False, skip_flood=False, debug=False):
     """Extracts contours from an image. Can be used to extract a contour surrounding the
     entire foreground border.
 
@@ -109,7 +107,6 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     Returns
     -------
     contours : <list> A list of contours"""
-
     """Gray"""
     if debug: print("Gray...")
     gray = cv2.cvtColor(src = image.copy(), code=cv2.COLOR_RGB2GRAY)
@@ -164,8 +161,10 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     foreground = cv2.morphologyEx(foreground, cv2.MORPH_CLOSE, kernel, iterations=1)
     """Flood from outside"""
     if debug: print("Flood fill...")
-    flood = flood_fill(foreground)
-
+    if skip_flood:
+        flood = foreground.copy()
+    else:
+        flood = flood_fill(foreground)
     if extract_border:
         """Get border"""
         if debug: print("Getting border...")
@@ -194,12 +193,13 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
 #         border_contour = [max(background_contours, key=cv2.contourArea)]
 #         return border_contour
 
-    """Draw contours"""
+    """Find contours"""
     if debug: print("Drawing contours...")
     new_img, contours, hierarchy = cv2.findContours(image=flood.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
-    drawn_contours = cv2.drawContours(image=image.copy(), contours=contours, contourIdx=-1, color=(0,0,255), thickness=2)
 
     if debug:
+        drawn_contours = cv2.drawContours(image=image.copy(), contours=contours, contourIdx=-1, color=(0, 0, 255),
+                                          thickness=2)
         """Get background"""
         if debug: print("Getting background...")
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (17, 17))
@@ -310,7 +310,7 @@ def sliding_window(image, stepSize, windowSize):
             yield (x, y, image[y:y + windowSize[1], x:x + windowSize[0]])
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_contour, debug=False, **kwargs):
+def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_contour, skip_flood=False, debug=False, **kwargs):
     """Uses a sliding-window approach to find contours across a large image. Uses KDTree algorithm to
     remove duplicated contours from overlapping windows.
 
@@ -335,7 +335,7 @@ def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_con
     clone = image.copy()
     blank = np.zeros(clone.shape[0:2], dtype=np.uint8)
     border_mask = cv2.drawContours(blank.copy(), border_contour, 0, (255), -1)
-    # mask input image (leaves only the area inside the red border contour)
+    # mask input image (leaves only the area inside the border contour)
     cutout = cv2.bitwise_and(clone, clone, mask=border_mask)
 
     n_windows = len(list(sliding_window(image=cutout.copy(), stepSize=stepsize, windowSize=(winW, winH))))
@@ -343,13 +343,13 @@ def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_con
 
     contours = []
     moments = []
-    for i, (x,y,window) in tqdm(enumerate(windows), total=n_windows):
+    for i, (x,y,window) in tqdm(enumerate(windows), total=n_windows, desc='Windows'):
         if debug: print(("Window {}, x0: {}, y0: {}, shape: {}".format(i,x,y,np.shape(window))))
         if window.shape[0] != winH or window.shape[1] != winW: continue
         if window.sum() == 0: continue
         """Running mini contour finder in window"""
         if debug: print("Running mini contour finder...")
-        window_contours = mcf(window, **kwargs)
+        window_contours = mcf(window, skip_flood=skip_flood,  **kwargs)
         if debug: print("Found {} contours in window {}".format(len(window_contours), i))
 
         """Remove overlapping contours"""
@@ -500,7 +500,7 @@ def read_units(scalebar, scalebar_img):
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def get_scalebar_info(image, plot=False, **kwargs):
+def get_scalebar_info(image, plot=False, debug=False, **kwargs):
     """Detects and reads a scalebar.
 
     Parameters
@@ -635,7 +635,7 @@ def export_contour_data(contours, moments, prefix, conversion_factor=None, units
     DF.to_pickle(os.path.join(output_dir, "{}.contour_data.pkl".format(prefix)))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def render_contour_plots(img, border_contour, contours, moments, prefix, dpi=300, output_dir="./", figsize=(16,16)):
+def render_contour_plots(img, border_contour, contours, prefix, dpi=300, output_dir="./", figsize=(16,16)):
     """Creates two contour plots: 1) border and interior contours overlaid on image 2) border and interior
     contours overlaid on image with contour indices for reference.
 
@@ -682,14 +682,17 @@ def render_contour_plots(img, border_contour, contours, moments, prefix, dpi=300
     plt.close()
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=1000, winH=1000, image=None, output_dir="./",
-                  border_contour='DETECT', print_plots=True, dpi=300, figsize=(16,16), debug=False, **kwargs):
+def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=1000, winH=1000, Amin=50, Amax=10e6,
+                  image=None, output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, figsize=(16,16),
+                  debug=False, **kwargs):
     """Parameters
     ----------
     filepath : <str> Filepath to query image.
     stepsize : <int> Slide step size in pixels (currently the same in x and y directions)
     winW : <int> Window width in pixels
     winH : <int> Window height in pixels
+    Amin : <int> Minimum contour area in pixels
+    Amax : <int> Maximum contour area in pixels
     neighborhood : <int> Neighborhood size in pixels determining a unique contour
     prefix : <str> New prefix for output files. By default the new files will reflect the input file's basename
     image : <numpy.ndarray> Query image. Note that is only for explicitly reading an
@@ -699,7 +702,7 @@ def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=100
         be used to find the border contour. Default=`DETECT`
     figsize : <tuple> Output figure size. Default=(16,16)
     debug : <bool> writes debugging information and plots each step
-    **kwargs : kwargs passed to `mcf`
+    **kwargs : kwargs for `mcf`
     """
 
     if debug:
@@ -719,28 +722,29 @@ def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=100
         if debug: print("[{}] Border contour given; skipping border detection".format(datetime.now()))
     else:
         print("[{}] Getting border...".format(datetime.now()))
-        border_contour = mcf(image=img, extract_border=True)
+        border_contour = mcf(image=img, extract_border=True, **kwargs)
 
-    if debug: print("[{}] Getting contours...".format(datetime.now()))
+    print("[{}] Finding contours...".format(datetime.now()))
     contours, s_contours, contour_hulls = sliding_contour_finder(image=img.copy(), stepsize=stepsize, winW=winW,
-               winH=winH, border_contour=border_contour, neighborhood=neighborhood, debug=False, **kwargs)
-
-    if debug: print("[{}] Exporting contour data...".format(datetime.now()))
+               winH=winH, border_contour=border_contour, neighborhood=neighborhood, **kwargs)
+    contours = contour_size_selection(contours, Amin=Amin, Amax=Amax)
+    print("Found {} contours".format(len(contours)))
+    print("[{}] Exporting contour data...".format(datetime.now()))
     # Export all contours
     export_contour_data(contours=contours, moments=[cv2.moments(c) for c in contours], conversion_factor=None,
                         units=None, prefix="{}.ALL".format(prefix), output_dir=output_dir)
-    if debug:
-        print("[{}] Contour data exported to".format(datetime.now()))
-        print(os.path.join(output_dir, "{}.contour_data.csv".format("{}.ALL".format(prefix))))
-        print(os.path.join(output_dir, "{}.contour_data.pkl".format("{}.ALL".format(prefix))))
+    print("[{}] Contour data exported to".format(datetime.now()))
+    print(os.path.join(output_dir, "{}.contour_data.csv".format("{}.ALL".format(prefix))))
+    print(os.path.join(output_dir, "{}.contour_data.pkl".format("{}.ALL".format(prefix))))
 
     if print_plots:
-        if debug: print("[{}] Plotting...".format(datetime.now()))
-        render_contour_plots(img=img, border_contour=border_contour, contours=contours,
-                             moments=[cv2.moments(c) for c in contours], prefix=prefix, dpi=300,
+        print("[{}] Plotting...".format(datetime.now()))
+        render_contour_plots(img=img, border_contour=border_contour, contours=contours, prefix=prefix, dpi=300,
                              output_dir=output_dir, figsize=figsize)
 
-        if debug: print("[{}] Plot saved to {}".format(datetime.now(), os.path.join(output_dir, "{}.tif".format(prefix))))
+        print("[{}] Plot saved to\n\t{} and\n\t{}".format(datetime.now(),
+                                                          os.path.join(output_dir, "{}.tif".format(prefix)),
+                                                          os.path.join(output_dir, "{}.noindex.tif".format(prefix))))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -760,13 +764,13 @@ def main():
     parser.add_argument("--prefix", type=str,
                     action="store", dest="prefix",
                     help="New prefix for output files. By default the new files will reflect the input file's basename")
-    parser.add_argument("--stepsize", type=int, default=500,
+    parser.add_argument("--stepsize", type=int,
                     action="store", dest="stepsize",
                     help="Slide step size in pixels (same in x and y directions). Default=500")
-    parser.add_argument("--winW", type=int, default=1000,
+    parser.add_argument("--winW", type=int,
                     action="store", dest="winW",
                     help="Window width in pixels. Default=1000")
-    parser.add_argument("--winH", type=int, default=1000,
+    parser.add_argument("--winH", type=int,
                     action="store", dest="winH",
                     help="Window height in pixels. Default=1000")
     parser.add_argument("--neighborhood", type=int, default=10,
@@ -802,14 +806,46 @@ def main():
     parser.add_argument("--k_foreground", type=int, default=7,
                     action="store", dest="k_foreground",
                     help="Foregound clean up kernel size; must be odd. Default=7")
+    parser.add_argument("--Amin", type=int, default=50,
+                        action="store", dest="Amin",
+                        help="Minimum contour area in pixel")
+    parser.add_argument("--Amax", type=int, default=10e6,
+                        action="store", dest="Amax",
+                        help="Maximum contour area in pixels")
 
     args = parser.parse_args()
+        
+    kwargs = {}
+    kwargs['k_blur'] = args.k_blur
+    kwargs['C'] = args.C
+    kwargs['blocksize'] = args.blocksize
+    kwargs['k_laplacian'] = args.k_laplacian
+    kwargs['k_dilate'] = args.k_dilate
+    kwargs['k_gradient'] = args.k_gradient
+    kwargs['k_foreground'] = args.k_foreground
+
+    h, w, c = cv2.imread(args.input).shape
+    if not args.winW:
+        winW = round((w / 5) / 100) * 100
+    else:
+        winW = args.winW
+    if not args.winH:
+        winH = round((h / 5) / 100) * 100
+    else:
+        winH = args.winH
+    if not args.stepsize:
+        stepsize = int(min([winH, winW])/2)
+    else:
+        stepsize = args.stepsize
 
     if not args.prefix:
         prefix = ".".join(re.split("\.", os.path.basename(args.input))[:-1])
     else:
         prefix = args.prefix
 
+
+    print("[{}] Circumscriptor command:\n\t python circumscriptor.py --prefix {} --stepsize {} --winW {} --winH {} --neighborhood {} --figsize {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {}".format(
+        datetime.now(), args.prefix, stepsize, winW, winH, args.neighborhood, args.figsize, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, args.Amin, args.Amax))
     print("[{}] Input file: {}".format(datetime.now(), args.input))
     print("[{}] Output directory: {}".format(datetime.now(), args.output_dir))
 
@@ -817,9 +853,13 @@ def main():
         print("\tFound pickle for {}. Delete output files to rerun analysis".format(prefix))
         sys.exit()
 
-    process_image(filepath=args.input, prefix=prefix, stepsize=args.stepsize, winW=args.winW, winH=args.winH,
-                neighborhood=args.neighborhood, output_dir=args.output_dir, dpi=args.dpi, debug=args.debug)
+    process_image(filepath=args.input, prefix=prefix, stepsize=stepsize, winW=winW, winH=winH,
+                  Amin=args.Amin, Amax=args.Amax, neighborhood=args.neighborhood, output_dir=args.output_dir,
+                  dpi=args.dpi, debug=args.debug, **kwargs)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 if __name__ == "__main__":
+    start = datetime.now()
     main()
+    end = datetime.now()
+    print("[{}] Time elapsed: {}".format(datetime.now(), end-start))
