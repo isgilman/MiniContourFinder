@@ -73,3 +73,47 @@ We also need to install `tesseract`.
 - Get someone to help with theory behind what we're doing
   - Why do we use the kernel sizes, processing steps, etc? Can we hard code parameter tuning based on some measures of the input image?
   - Possibly could feed in a set of standard images with a range of parameter values to understand behavior better, but in my experience the dynamics are not so predictable
+
+
+# GUI building
+## Py GTK+ 3
+For `pygtk` I need to install `jhbuild`
+
+```bash
+(compvision) ➜  apps $ cd ~/apps
+(compvision) ➜  apps $ git clone https://gitlab.gnome.org/GNOME/jhbuild.git
+(compvision) ➜  apps $ cd jhbuild
+(compvision) ➜  jhbuild git:(master) $ ./autogen.sh
+(compvision) ➜  jhbuild git:(master) $ make
+(compvision) ➜  jhbuild git:(master) $ make install
+(compvision) ➜  jhbuild git:(master) $ PATH=$PATH:~/.local/bin
+```
+
+The last line temporarily adds the `jhbuild` tools to my path. Note that I did not have `yelp-tools`. So the install used a plain Makefile:
+> If gnome-common, yelp-tools and autotools are not available, autogen.sh will configure JHBuild to install via a plain Makefile.
+
+```bash
+(compvision) ➜  ~ $ cd ~/Dropbox/GitHub_repos/CrossSection_DeepLearning
+(compvision) ➜  CrossSection_DeepLearning $ jhbuild sanitycheck
+libtool >= 1.5 not found
+aclocal cant see libtool macros
+Please copy the lacking macros (libtool.m4) in one of the following paths: /Users/iangilman/jhbuild/install/share/aclocal, /usr/share/aclocal, /Users/iangilman/miniconda3/envs/compvision/share/aclocal
+Could not find DocBook XML DTD V4.1.2 in XML catalog (usually part of package 'docbook-xsl')
+Could not find DocBook XSL Stylesheets in XML catalog (usually part of package 'docbook-xsl')
+Could not find the Perl module XML::Parser (usually part of package 'libxml-parser-perl' or 'perl-XML-Parser')
+dbus-python not found
+(compvision) ➜  CrossSection_DeepLearning $ conda install libtool perl-XML-Parser dbus-python
+(compvision) ➜  CrossSection_DeepLearning $ brew install docbook docbook-xsld
+```
+
+Still receiving the errors about DocBook, so installing with `sudo` and MacPorts:
+
+```bash
+(compvision) ➜  ~ $ sudo port install libxslt docbook-xsl docbook-xml-4.2
+```
+
+## PyQT
+
+```bash
+(compvision) ➜  ~ $ conda install -c conda-forge pyqt
+```
