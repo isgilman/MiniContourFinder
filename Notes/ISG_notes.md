@@ -117,3 +117,8 @@ Still receiving the errors about DocBook, so installing with `sudo` and MacPorts
 ```bash
 (compvision) ➜  ~ $ conda install -c conda-forge pyqt
 ```
+## 26 Feb 2019
+- Wavelet transform images?
+
+## 27 Feb
+Tried iLastik and it is very slow with a multi-step workflow. Not worth the time.

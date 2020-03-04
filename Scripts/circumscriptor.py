@@ -2,10 +2,8 @@
 # coding: utf-8
 
 # core
-import sys, os, re, argparse, csv
-from argparse import ArgumentParser
+import sys, os, re, argparse
 import numpy as np
-from glob import glob
 from datetime import datetime
 try: import pandas as pd
 except ImportError:
@@ -109,7 +107,7 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     contours : <list> A list of contours"""
     """Gray"""
     if debug: print("Gray...")
-    gray = cv2.cvtColor(src = image.copy(), code=cv2.COLOR_RGB2GRAY)
+    gray = cv2.cvtColor(src = image, code=cv2.COLOR_RGB2GRAY)
     """Blur"""
     if debug: print("Blur...")
     blur = cv2.GaussianBlur(src=gray, ksize=(k_blur, k_blur), sigmaX=2)
@@ -151,7 +149,7 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     gradient = cv2.morphologyEx(dilate, cv2.MORPH_GRADIENT, kernel=kernel, iterations=1)
     """Binarize"""
     if debug: print("Binarize...")
-    tozero = cv2.threshold(dilate, 127, 255, cv2.THRESH_TOZERO)
+    tozero = cv2.threshold(gradient, 127, 255, cv2.THRESH_TOZERO)
     tozero = np.uint8(np.uint8(tozero[1]))
     binary = cv2.inRange(tozero, 0, 100)
     """Foreground clean up"""
@@ -611,11 +609,12 @@ def measure_image(image, c_cells, c_airspace, c_border, conversion_factor=None, 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-def export_contour_data(contours, moments, prefix, conversion_factor=None, units=None, output_dir="./"):
+def export_contour_data(image, contours, moments, prefix, conversion_factor=None, units=None, output_dir="./"):
     """Exports relevant data on contours in CSV and pickle format.
 
     Parameters
     ----------
+    image : <np.ndarray> Image
     contours : <np.ndarray> Contours to export
     moments : <list> List of contour moments
     conversion_factor : <float> Conversion factort to convert pixel area. Default=None
@@ -626,7 +625,52 @@ def export_contour_data(contours, moments, prefix, conversion_factor=None, units
     DF = pd.DataFrame()
     DF["contour"] = contours
     DF["moments"] = moments
+    X = []
+    Y = []
+    cXY = []
+    cR = []
+    for c in contours:
+        M = cv2.moments(c)
+        if M["m00"] != 0:
+            x = int((M["m10"] / M["m00"]))-10
+            y = int((M["m01"] / M["m00"]))
+        else:
+            x,y = 0,0
+        X.append(x)
+        Y.append(y)
+        min_c_xy, min_c_r = cv2.minEnclosingCircle(c)
+        cXY.append(min_c_xy)
+        cR.append(min_c_r)
+    DF["xy"] = list(zip(X,Y))
+    DF["min_circle_xy"] = cXY
+    DF["min_circle_r"] = cR
     DF["area_pixels"] = [cv2.contourArea(c) for c in contours]
+    DF["convex_hull"] = [cv2.convexHull(c) for c in contours]
+    DF["convexity"] = [cv2.isContourConvex(c) for c in contours]
+    DF["solidity"] = [float(cv2.contourArea(c))/cv2.contourArea(cv2.convexHull(c)) for c in contours]
+    DF["equivalent_d"] = [np.sqrt(4*cv2.contourArea(c)/np.pi) for c in contours]
+
+    """Get mean color"""
+    R = []
+    G = []
+    B = []
+    for i, c in enumerate(contours):
+        clone = image.copy()
+        mask = np.zeros_like(clone)  # Create mask where white is what we want, black otherwise
+        cv2.drawContours(mask, contours, i, 255, -1)  # Draw filled contour in mask
+        out = np.zeros_like(image)  # Extract out the object and place into output image
+        out[mask == 255] = image[mask == 255]
+        pixelpoints = np.transpose(np.nonzero(mask))
+
+        r, g, b = image[flatten(pixelpoints[:, :2])[::2], flatten(pixelpoints[:, :2])[1::2]].mean(axis=0) / 255
+        R.append(r)
+        G.append(g)
+        B.append(b)
+
+    DF["mean_R"] = R
+    DF["mean_G"] = G
+    DF["mean_B"] = B
+
 
     if conversion_factor and units:
         DF["area_{}".format(units)] = DF["area_pixels"]*conversion_factor
@@ -635,7 +679,7 @@ def export_contour_data(contours, moments, prefix, conversion_factor=None, units
     DF.to_pickle(os.path.join(output_dir, "{}.contour_data.pkl".format(prefix)))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def render_contour_plots(img, border_contour, contours, prefix, dpi=300, output_dir="./", figsize=(16,16)):
+def render_contour_plots(image, border_contour, contours, prefix, dpi=300, output_dir="./"):
     """Creates two contour plots: 1) border and interior contours overlaid on image 2) border and interior
     contours overlaid on image with contour indices for reference.
 
@@ -648,21 +692,25 @@ def render_contour_plots(img, border_contour, contours, prefix, dpi=300, output_
     prefix : <str> Prefix for output files (e.g. prefix.noindex.tif, prefix.tif)
     dpi : <int> Output image resolution. Default=300
     output_dir : <str> Path to output directory. Default='./'
-    figsize : <tuple> Output figure size. Default=(16,16)
+    figsize : <tuple> Output figure size. Default= original image size
     """
+    # Get figure size
+    height, width, depth = image.shape
+    figsize = width / float(dpi), height / float(dpi)
 
     # No index image
-    canvas = img.copy()
+    canvas = image.copy()
     fig, ax = plt.subplots(ncols=1, figsize=figsize)
     cv2.drawContours(canvas, contours=border_contour, contourIdx=-1, color=(255,0,0), thickness=2)
     cv2.drawContours(canvas, contours=contours, contourIdx=-1, color=(0,255,255), thickness=2)
     ax.imshow(canvas)
-    plt.tight_layout()
+    ax.axis('off')
+    # plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "{}.noindex.tif".format(prefix)), dpi=dpi, transparent=True)
     plt.close()
 
     # Indexed image
-    canvas = img.copy()
+    canvas = image.copy()
     fig, ax = plt.subplots(ncols=1, figsize=figsize)
     cv2.drawContours(canvas, contours=border_contour, contourIdx=-1, color=(255,0,0), thickness=2)
     # Plot indexed contours
@@ -677,14 +725,14 @@ def render_contour_plots(img, border_contour, contours, prefix, dpi=300, output_
         ax.text(x=cX, y=cY, s=u"{}".format(i), color="black", size=8)
 
     ax.imshow(canvas)
-    plt.tight_layout()
+    ax.axis('off')
+    # plt.tight_layout()
     plt.savefig(os.path.join(output_dir, "{}.tif".format(prefix)), dpi=dpi, transparent=True)
     plt.close()
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=1000, winH=1000, Amin=50, Amax=10e6,
-                  image=None, output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, figsize=(16,16),
-                  debug=False, **kwargs):
+                  image=None, output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, debug=False, **kwargs):
     """Parameters
     ----------
     filepath : <str> Filepath to query image.
@@ -706,46 +754,79 @@ def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=100
     """
 
     if debug:
-        print("[{}] Working directory: {}".format(datetime.now(), os.getcwd()))
-        print("[{}] Output directory: {}".format(datetime.now(), output_dir))
+        print("[{}] Working directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), os.getcwd()))
+        print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir))
     if filepath:
-        img = cv2.imread(filepath)
+        image = cv2.imread(filepath)
         if not prefix:
             prefix = ".".join(re.split("\.", os.path.basename(filepath))[:-1])
         if debug:
-            print("[{}] Input file: {}".format(datetime.now(), filepath))
-    if image:
-        if debug: print("Working with image not from file...")
-        img = image.copy()
-
+            print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), filepath))
+    # if image:
+    #     if debug: print("Working with image not from file...")
+    #     image = image.copy()
+    """Denoise"""
+    image = cv2.fastNlMeansDenoisingColored(image.copy(), None, 10, 10, 7, 21)
     if border_contour != 'DETECT':
-        if debug: print("[{}] Border contour given; skipping border detection".format(datetime.now()))
+        if debug: print("[{}] Border contour given; skipping border detection".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     else:
-        print("[{}] Getting border...".format(datetime.now()))
-        border_contour = mcf(image=img, extract_border=True, **kwargs)
+        print("[{}] Getting border...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        border_contour = mcf(image=image, extract_border=True, **kwargs)
 
-    print("[{}] Finding contours...".format(datetime.now()))
-    contours, s_contours, contour_hulls = sliding_contour_finder(image=img.copy(), stepsize=stepsize, winW=winW,
-               winH=winH, border_contour=border_contour, neighborhood=neighborhood, **kwargs)
+    print("[{}] Finding contours...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+    # contours, s_contours, contour_hulls = sliding_contour_finder(image=image.copy(), stepsize=stepsize, winW=winW,
+    #            winH=winH, border_contour=border_contour, neighborhood=neighborhood, **kwargs)
+    contours = mcf(image=image, **kwargs)
     contours = contour_size_selection(contours, Amin=Amin, Amax=Amax)
     print("Found {} contours".format(len(contours)))
-    print("[{}] Exporting contour data...".format(datetime.now()))
+    print("[{}] Exporting contour data...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     # Export all contours
-    export_contour_data(contours=contours, moments=[cv2.moments(c) for c in contours], conversion_factor=None,
+    export_contour_data(image=image, contours=contours, moments=[cv2.moments(c) for c in contours], conversion_factor=None,
                         units=None, prefix="{}.ALL".format(prefix), output_dir=output_dir)
-    print("[{}] Contour data exported to".format(datetime.now()))
+    print("[{}] Contour data exported to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     print(os.path.join(output_dir, "{}.contour_data.csv".format("{}.ALL".format(prefix))))
     print(os.path.join(output_dir, "{}.contour_data.pkl".format("{}.ALL".format(prefix))))
 
     if print_plots:
-        print("[{}] Plotting...".format(datetime.now()))
-        render_contour_plots(img=img, border_contour=border_contour, contours=contours, prefix=prefix, dpi=300,
-                             output_dir=output_dir, figsize=figsize)
+        print("[{}] Plotting...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        render_contour_plots(image=image, border_contour=border_contour, contours=contours, prefix=prefix, dpi=300, output_dir=output_dir)
 
-        print("[{}] Plot saved to\n\t{} and\n\t{}".format(datetime.now(),
+        print("[{}] Plot saved to\n\t{} and\n\t{}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'),
                                                           os.path.join(output_dir, "{}.tif".format(prefix)),
                                                           os.path.join(output_dir, "{}.noindex.tif".format(prefix))))
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def query_yes_no(question, default):
+    """Ask a yes/no question via raw_input() and return their answer.
+
+    "question" is a string that is presented to the user.
+    "default" is the presumed answer if the user just hits <Enter>.
+        It must be "yes" (the default), "no" or None (meaning
+        an answer is required of the user).
+
+    The "answer" return value is True for "yes" or False for "no".
+    """
+    valid = {"yes": True, "y": True, "ye": True,
+             "no": False, "n": False}
+    if default is None:
+        prompt = " [y/n] "
+    elif default == "yes":
+        prompt = " [Y/n] "
+    elif default == "no":
+        prompt = " [y/N] "
+    else:
+        raise ValueError("invalid default answer: '%s'" % default)
+
+    while True:
+        sys.stdout.write(question + prompt)
+        choice = input().lower()
+        if default is not None and choice == '':
+            return valid[default]
+        elif choice in valid:
+            return valid[choice]
+        else:
+            sys.stdout.write("Please respond with 'yes' or 'no' "
+                             "(or 'y' or 'n').\n")
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def main():
@@ -845,13 +926,18 @@ def main():
 
 
     print("[{}] Circumscriptor command:\n\t python circumscriptor.py --prefix {} --stepsize {} --winW {} --winH {} --neighborhood {} --figsize {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {}".format(
-        datetime.now(), args.prefix, stepsize, winW, winH, args.neighborhood, args.figsize, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, args.Amin, args.Amax))
-    print("[{}] Input file: {}".format(datetime.now(), args.input))
-    print("[{}] Output directory: {}".format(datetime.now(), args.output_dir))
+        datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, stepsize, winW, winH, args.neighborhood, args.figsize, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, args.Amin, args.Amax))
+    print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), args.input))
+    print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), args.output_dir))
 
     if os.path.exists(os.path.join(args.output_dir, prefix+".ALL.contour_data.csv")):
-        print("\tFound pickle for {}. Delete output files to rerun analysis".format(prefix))
-        sys.exit()
+        print("\tFound pickle for {}.".format(prefix))
+        response = query_yes_no("Would you like to DELETE and OVERWRITE?", None)
+        if response==True:
+            print("\tRemoving and rerunning...")
+        else:
+            print("\tDelete output files or change output prefix to rerun analysis")
+            sys.exit()
 
     process_image(filepath=args.input, prefix=prefix, stepsize=stepsize, winW=winW, winH=winH,
                   Amin=args.Amin, Amax=args.Amax, neighborhood=args.neighborhood, output_dir=args.output_dir,
@@ -862,4 +948,4 @@ if __name__ == "__main__":
     start = datetime.now()
     main()
     end = datetime.now()
-    print("[{}] Time elapsed: {}".format(datetime.now(), end-start))
+    print("[{}] Time elapsed: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), end-start))
