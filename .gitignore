@@ -5,8 +5,9 @@ Data/Portulaca/*
 Data/SampleSheet/numbers
 Scripts/__pycache__/*
 *.pyc
-.DS_Store
+*/.DS_Store
 Notebooks/.ipynb_checkpoints/*
+Notes/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
