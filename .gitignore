@@ -1,2 +1,6 @@
 # Files too large for LFS
+Data/C3_images/*
+Data/Calindrina/*
 Data/large_files/*
+Data/Portulaca/*
+Data/SampleSheet.numbers
