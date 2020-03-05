@@ -11,7 +11,6 @@ class App(QWidget):
         self.resize(1000, 800)
         grid_layout = QGridLayout()
         self.setLayout(grid_layout)
-        # Note that grid coords are (row, col, rowspan, colspan)
         self.setMouseTracking(True)
 
         ### Render image ###
@@ -20,6 +19,7 @@ class App(QWidget):
         self.image_path = sys.argv[1]
         self.cv2_image = cv2.imread(self.image_path)
         self.__originalH__, self.__originalW__, self.__originalD__ = self.cv2_image.shape
+
         # Get contours
         self.contours = mcf(image=self.cv2_image, skip_flood=True)
         self.contour_color = (255, 0, 0)
@@ -29,13 +29,17 @@ class App(QWidget):
         cv2.drawContours(self.cv2_image, contours=self.contours, contourIdx=-1, color=self.contour_color, thickness=2)
         if len(self.highlighted)>0:
             cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color, thickness=2)
-        # Convert to widget
+
+        # Convert to Qimage object
         self.np_image = cv2.cvtColor(self.cv2_image, cv2.COLOR_BGR2RGB)
-        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], QImage.Format_RGB888)
+        self.totalBytes = self.np_image.nbytes
+        self.bytesPerLine = int(self.totalBytes / self.np_image.shape[0])
+        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], self.bytesPerLine, QImage.Format_RGB888)
         pixmap = QPixmap(self.qimage)
         self.label.setPixmap(pixmap)
-        grid_layout.addWidget(self.label, 0, 0, 12, 8)
+        grid_layout.addWidget(self.label, 0, 0, 12, 8) # Note that grid coords are (row, col, rowspan, colspan)
         self.label.mousePressEvent = self.get_image_pos
+        self.label.setCursor(QtCore.Qt.CrossCursor)
 
         ### Create sliders ###
         self.k_blur = QSlider(QtCore.Qt.Horizontal)
@@ -121,16 +125,10 @@ class App(QWidget):
         grid_layout.addWidget(self.Amax, 8, 8, 1, 2)
         grid_layout.addWidget(self.setAmax, 8, 10)
 
-        ### Apply transpose
-        self.transpose_image = QPushButton()
-        self.transpose_image.setCheckable(True)
-        self.transpose_image.setText("Transpose image")
-        grid_layout.addWidget(self.transpose_image, 9, 8, 1, 3)
-
         ### Generate parameters for CLI ###
         self.CLIgenerator = QPushButton()
         self.CLIgenerator.setText("Copy CLI parameters to clipboard")
-        grid_layout.addWidget(self.CLIgenerator, 10, 8, 1, 3)
+        grid_layout.addWidget(self.CLIgenerator, 9, 8, 1, 3)
 
         ### Text box ###
         self.box = QPlainTextEdit()
@@ -140,20 +138,20 @@ class App(QWidget):
         ### Reset parameters ###
         self.resetParams = QPushButton()
         self.resetParams.setText("Reset parameters")
-        grid_layout.addWidget(self.resetParams, 11, 8, 1, 3)
+        grid_layout.addWidget(self.resetParams, 10, 8, 1, 3)
 
         ### Color picker ###
         self.contour_colorPicker = QPushButton()
         self.contour_colorPicker.setText("Contour color")
-        grid_layout.addWidget(self.contour_colorPicker, 12, 8, 1, 3)
+        grid_layout.addWidget(self.contour_colorPicker, 11, 8, 1, 3)
 
         self.highlight_colorPicker = QPushButton()
         self.highlight_colorPicker.setText("Highlight color")
-        grid_layout.addWidget(self.highlight_colorPicker, 13, 8, 1, 3)
+        grid_layout.addWidget(self.highlight_colorPicker, 12, 8, 1, 3)
 
         ### Contour selection ###
         self.select_contours = QCheckBox("Select contours")
-        grid_layout.addWidget(self.select_contours, 14, 8, 1, 3)
+        grid_layout.addWidget(self.select_contours, 13, 8, 1, 3)
 
         ### Connections ###
         # Sliders -> plots
@@ -198,9 +196,6 @@ class App(QWidget):
             height_ratio = self.__originalH__/float(self.pixmap.height())
             new_x = int(width_ratio*x)
             new_y = int(height_ratio*y)
-            print(x,y)
-            print(new_x, new_y)
-            print(int(width_ratio*self.pixmap.width()), int(height_ratio*self.pixmap.height()))
 
             # Remove highlight contour if reselected
             in_highlighted = False
@@ -235,21 +230,17 @@ class App(QWidget):
         try:
             Amax = int(self.Amax.text())
         except ValueError:
-            Amax = int(10e6)
+            Amax = int(self.__originalH__*self.__originalW__)
 
         self.large_contours = contour_size_selection(self.contours, Amin=Amin, Amax=Amax)
-        cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color,
-                         thickness=2)
+        cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=2)
         if len(self.highlighted) > 0:
-            cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color,
-                             thickness=2)
+            cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color, thickness=2)
 
         self.np_image = cv2.cvtColor(self.cv2_image, cv2.COLOR_BGR2RGB)
-        if self.transpose_image.isChecked():
-            self.np_image = np.transpose(self.np_image, (1, 0, 2)).copy()
-        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], QImage.Format_RGB888)
+        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], self.bytesPerLine, QImage.Format_RGB888)
         pixmap = QPixmap(self.qimage)
-        self.pixmap = pixmap.scaled(int(2.0 * self.width() / 3.0), self.height(), QtCore.Qt.KeepAspectRatio)
+        self.pixmap = pixmap.scaled(self.label.width(), self.label.height(), QtCore.Qt.KeepAspectRatio)
         self.label.setPixmap(self.pixmap)
         self.label.resize(self.width(), self.height())
 
@@ -283,7 +274,7 @@ class App(QWidget):
         try:
             Amax = int(self.Amax.text())
         except ValueError:
-            Amax = int(10e6)
+            Amax = int(self.__originalH__*self.__originalW__)
 
         self.large_contours = contour_size_selection(self.contours, Amin=Amin, Amax=Amax)
         cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=2)
@@ -291,11 +282,9 @@ class App(QWidget):
             cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color, thickness=2)
 
         self.np_image = cv2.cvtColor(self.cv2_image, cv2.COLOR_BGR2RGB)
-        if self.transpose_image.isChecked():
-            self.np_image = np.transpose(self.np_image, (1, 0, 2)).copy()
-        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], QImage.Format_RGB888)
+        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], self.bytesPerLine, QImage.Format_RGB888)
         pixmap = QPixmap(self.qimage)
-        self.pixmap = pixmap.scaled(int(2.0*self.width()/3.0), self.height(), QtCore.Qt.KeepAspectRatio)
+        self.pixmap = pixmap.scaled(self.label.width(), self.label.height(), QtCore.Qt.KeepAspectRatio)
         self.label.setPixmap(self.pixmap)
         self.label.resize(self.width(), self.height())
 
@@ -356,7 +345,7 @@ class App(QWidget):
         try:
             Amax = int(self.Amax.text())
         except ValueError:
-            Amax = int(10e6)
+            Amax = int(self.__originalH__*self.__originalW__)
 
         self.large_contours = contour_size_selection(self.contours, Amin=Amin, Amax=Amax)
         cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=2)
@@ -364,15 +353,20 @@ class App(QWidget):
             cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color, thickness=2)
 
         self.np_image = cv2.cvtColor(self.cv2_image, cv2.COLOR_BGR2RGB)
-        if self.transpose_image.isChecked():
-            self.np_image = np.transpose(self.np_image, (1, 0, 2)).copy()
-        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], QImage.Format_RGB888)
+        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], self.bytesPerLine, QImage.Format_RGB888)
         pixmap = QPixmap(self.qimage)
-        self.pixmap = pixmap.scaled(int(2.0*self.width()/3.0), self.height(), QtCore.Qt.KeepAspectRatio)
+        self.pixmap = pixmap.scaled(self.label.width(), self.label.height(), QtCore.Qt.KeepAspectRatio)
         self.label.setPixmap(self.pixmap)
         self.label.resize(self.width(), self.height())
 
 if __name__ == '__main__':
+    print("""
+    ╭━━┳┳┳━┳━━┳┳┳━━┳━━┳┳┳╮
+    ┃ ━┫┃╭━┫ ━┫┃┃┃┃┃  ┃┃┃┃
+    ╰━━┻┻╯ ╰━━┻━┻┻┻╋━╮┣━┻╯
+                   ╰━━╯
+    """)
+
     app = QApplication(sys.argv)
     w = App()
     w.show()
