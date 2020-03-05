@@ -1,2 +1,7 @@
 # Files too large for LFS
-Data/large_files/*
+Data/C3_images/*
+Data/Calindrinia/*
+Data/large_images/*
+Data/Portulaca/*
+Data/SampleSheet/numbers
+Scripts/__pycache__/*
