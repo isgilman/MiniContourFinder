@@ -41,6 +41,11 @@ try:
 except ImportError:
     print("\n\tError: skimage is not installed/loaded")
     sys.exit()
+try:
+    from pathlib import Path
+except ImportError:
+    print("\n\tError: pathlib is not installed/loaded")
+    sys.exit()
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 class Vividict(dict):
@@ -108,37 +113,19 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     """Gray"""
     if debug: print("Gray...")
     gray = cv2.cvtColor(src = image, code=cv2.COLOR_RGB2GRAY)
+    """Adaptive histogram normalization"""
+    gridsize = int(min(0.01*max(image.shape[:2]), 8))
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(gridsize, gridsize))
+    hequalized = clahe.apply(gray)
     """Blur"""
     if debug: print("Blur...")
-    blur = cv2.GaussianBlur(src=gray, ksize=(k_blur, k_blur), sigmaX=2)
+    blur = cv2.GaussianBlur(src=hequalized, ksize=(k_blur, k_blur), sigmaX=2, )
     """Adaptive Gaussian threshold"""
     if debug: print("Adapt Gauss Thresh...")
     thresh = cv2.adaptiveThreshold(src=blur, maxValue=255, adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C, thresholdType=cv2.THRESH_BINARY, blockSize=blocksize, C=C)
-
-    """The next commented out blocks relate to morphological snakes"""
-#     if extract_border:
-#         """Get border"""
-#         if debug: print("Getting border...")
-#         # Morphological GAC
-#         sk_compat = img_as_float(thresh)
-#         gimage = inverse_gaussian_gradient(sk_compat)
-#         # Initial level set
-#         init_ls = np.zeros(shape=sk_compat.shape, dtype=np.int8)
-#         init_ls[10:-10, 10:-10] = 1
-#         # List with intermediate results for plotting the evolution
-#         print("GAC")
-#         ls = morphological_geodesic_active_contour(gimage=gimage, iterations=200, init_level_set=init_ls,
-#                                         smoothing=1, balloon=-1, threshold=0.9)#, iter_callback=callback)
-#         # Convert back to cv2
-#         background = img_as_ubyte(ls)
-#         print("Get contours")
-#         background_image, background_contours, background_hierarchy = cv2.findContours(image=background.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
-#         border_contour = [max(background_contours, key=cv2.contourArea)]
-#         return border_contour
-
     """Laplacian"""
     if debug: print("Laplacian...")
-    laplacian = cv2.Laplacian(src=thresh, ddepth=cv2.CV_16S, ksize=k_laplacian)
+    laplacian = cv2.Laplacian(src=thresh, ddepth=cv2.CV_16S, ksize=k_laplacian, )
     """Dilate"""
     if debug: print("Dilate...")
     kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(k_dilate, k_dilate))
@@ -168,87 +155,14 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
         if debug: print("Getting border...")
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (17, 17))
         background = cv2.dilate(flood, kernel, iterations=2)
-        unknown = cv2.subtract(background, foreground)
         background_image, background_contours, background_hierarchy = cv2.findContours(image=background.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
         border_contour = [max(background_contours, key=cv2.contourArea)]
         return border_contour
-    """The next commented out blocks relate to morphological snakes"""
-#         # Morphological GAC
-#         sk_compat = img_as_float(thresh)
-#         gimage = inverse_gaussian_gradient(sk_compat)
-
-#         # Initial level set
-#         init_ls = np.zeros(shape=sk_compat.shape, dtype=np.int8)
-#         init_ls[10:-10, 10:-10] = 1
-#         # List with intermediate results for plotting the evolution
-# #         evolution = []
-# #         callback = store_evolution_in(evolution)
-#         ls = morphological_geodesic_active_contour(gimage=gimage, iterations=200, init_level_set=init_ls,
-#                                         smoothing=1, balloon=-1, threshold=0.9)#, iter_callback=callback)
-#         # Convert back to cv2
-#         background = img_as_ubyte(ls)
-#         background_image, background_contours, background_hierarchy = cv2.findContours(image=background.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
-#         border_contour = [max(background_contours, key=cv2.contourArea)]
-#         return border_contour
 
     """Find contours"""
     if debug: print("Drawing contours...")
     new_img, contours, hierarchy = cv2.findContours(image=flood.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
 
-    if debug:
-        drawn_contours = cv2.drawContours(image=image.copy(), contours=contours, contourIdx=-1, color=(0, 0, 255),
-                                          thickness=2)
-        """Get background"""
-        if debug: print("Getting background...")
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (17, 17))
-        background = cv2.dilate(flood, kernel, iterations=2)
-        unknown = cv2.subtract(background, foreground)
-
-        """Watershed"""
-        print("Watershed...")
-        markers = cv2.connectedComponents(foreground)[1]
-        markers += 1  # Add one to all labels so that background is 1, not 0
-        markers[unknown==255] = 0  # mark the region of unknown with zero
-        markers = cv2.watershed(image, markers)
-        """Create marker image"""
-        print("Creating marker image...")
-        hue_markers = np.uint8(179*np.float32(markers)/np.max(markers))
-        blank_channel = 255*np.ones((h, w), dtype=np.uint8)
-        marker_img = cv2.merge([hue_markers, blank_channel, blank_channel])
-        marker_img = cv2.cvtColor(marker_img, cv2.COLOR_HSV2BGR)
-
-        """Plotting"""
-        print("Plotting...")
-        fig, ax = plt.subplots(nrows=4, ncols=3, figsize=(24, 24), sharex=True, sharey=True)
-
-        ax[0,0].imshow(gray, cmap="gray")
-        ax[0,0].set_title("Gray")
-        ax[0,1].imshow(blur, cmap="gray")
-        ax[0,1].set_title("Gaussian blur")
-        ax[0,2].imshow(thresh, cmap="gray")
-        ax[0,2].set_title("Gaussian Adaptive Threshold")
-        ax[1,0].imshow(laplacian, cmap="gray")
-        ax[1,0].set_title("Laplacian")
-        ax[1,1].imshow(dilate, cmap="gray")
-        ax[1,1].set_title("Dilate")
-        ax[1,2].imshow(gradient, cmap="gray")
-        ax[1,2].set_title("Gradient")
-        ax[2,0].imshow(binary, cmap="gray")
-        ax[2,0].set_title("Binarized")
-        ax[2,1].imshow(foreground, cmap="gray")
-        ax[2,1].set_title("Clean up foreground")
-        ax[2,2].imshow(flood, cmap="gray")
-        ax[2,2].set_title("Flood fill")
-        ax[3,0].imshow(background, cmap="gray")
-        ax[3,0].set_title("Background")
-        ax[3,1].imshow(marker_img, cmap="gray")
-        ax[3,1].set_title("Marker image")
-        ax[3,2].imshow(drawn_contours, cmap="gray")
-        ax[3,2].set_title("Drawn contours")
-        for i in range(4):
-            for j in range(3):
-                ax[i,j].axis("off")
-        plt.tight_layout(pad=0)
     return contours
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -269,7 +183,6 @@ def contour_size_selection(contours, pmin=50, pmax=10e5, Amin=50, Amax=10e6):
     """
 
     large_contours = []
-    large_smooth = []
     for c in contours:
         area = cv2.contourArea(c)
         perimeter = cv2.arcLength(c, closed=True)
@@ -373,9 +286,8 @@ def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_con
                     moments.append([cX, cY])
 
     if debug: print("Found {} non-overlapping contours".format(len(contours)))
-    smoothed, hulls = smooth_contours(contours=contours)
 
-    return contours, smoothed, hulls
+    return contours
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def refine_contours(image, contours, border_contours, overlap_thresh=0, pmin=50, pmax=10e5, Amin=50, Amax=10e6,
@@ -608,28 +520,110 @@ def measure_image(image, c_cells, c_airspace, c_border, conversion_factor=None, 
     return A_cells, A_airspace
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def RectangleOverlapTest(image, contours, x, y, width, height, REMOVE=False):
+    """Finds contours that overlap with a rectangle.
 
-def export_contour_data(image, contours, moments, prefix, conversion_factor=None, units=None, output_dir="./"):
+    Parameters
+    ----------
+    image <numpy.ndarray> : Image which contours are from
+    contours <list>: A list of contours
+    x <int> : Left rectangle side
+    y <int> : Top rectangle side
+    width <int> : Rectangle width
+    height <int> : Rectangle height
+
+    Returns
+    -------
+    selected <list> : A list of contours
+    """
+    blank = np.zeros(image.shape[0:2])
+    rectangle = cv2.rectangle(blank.copy(), (x, y), (x + width, y + height), 1, cv2.FILLED)
+    rect_x, rect_y = (x + (width / 2), y + (height / 2))
+    if REMOVE:
+        rm_idx = []
+        for i, c in tqdm(enumerate(contours), desc='RectangleOverlapTest', leave=False):
+            (min_c_x, min_c_y), min_c_r = cv2.minEnclosingCircle(c)
+            if abs(min_c_x - rect_x) > (width / 2) + (min_c_r): continue
+            if abs(min_c_y - rect_y) > (height / 2) + (min_c_r): continue
+
+            current = cv2.drawContours(blank.copy(), contours, i, 1, cv2.FILLED)
+            overlap = np.logical_and(current, rectangle)
+            if overlap.any():
+                rm_idx.append(i)
+        unselected = np.delete(contours, rm_idx)
+        return list(unselected)
+    else:
+        selected = []
+        for i, c in tqdm(enumerate(contours), desc='RectangleOverlapTest', leave=False):
+            (min_c_x, min_c_y), min_c_r = cv2.minEnclosingCircle(c)
+            if abs(min_c_x - rect_x) > (width / 2) + (min_c_r): continue
+            if abs(min_c_y - rect_y) > (height / 2) + (min_c_r): continue
+
+            current = cv2.drawContours(blank.copy(), contours, i, 1, cv2.FILLED)
+            overlap = np.logical_and(current, rectangle)
+            if overlap.any():
+                selected.append(c)
+        return selected
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def ContourOverlapTest(image, contours, background_contours, return_overlapping=True):
+    """finds contours that overlap with a set of background contours.
+
+    Parameters
+    ----------
+    image <numpy.ndarray> : Image which contours are from
+    contours <list> : List of contours of interest
+    background_contours  <list> : List of background contours to look for overlap with
+    return_overlapping <bool> : Return overlapping contours. If False, will return contours that
+        do not overlap. Default=True
+
+    Returns
+    -------
+    selected <list> : A list of contours that are overlapping
+    """
+    selected = []
+    blank = np.zeros(image.shape[0:2])
+    background_image = cv2.drawContours(blank.copy(), background_contours, -1, 1, cv2.FILLED)
+    for i in tqdm(range(len(contours)), desc='ContourOverlapTest', leave=False):
+        current = cv2.drawContours(blank.copy(), contours, i, 1, cv2.FILLED)
+        if return_overlapping:
+            if np.logical_and(current, background_image).any():
+                selected.append(contours[i])
+        else:
+            if not np.logical_and(current, background_image).any():
+                selected.append(contours[i])
+
+    return selected
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def export_contour_data(image, contours, prefix, conversion_factor=None, units=None, output_dir="./"):
     """Exports relevant data on contours in CSV and pickle format.
 
     Parameters
     ----------
     image : <np.ndarray> Image
     contours : <np.ndarray> Contours to export
-    moments : <list> List of contour moments
     conversion_factor : <float> Conversion factort to convert pixel area. Default=None
     units : <str> Associated conversion factor units. Default=None
     prefix : <str> Prefix for output files (e.g. PREFIX.contour_data.pkl, PREFIX.contour_data.csv)
     output_dir : <str> Path to output directory. Default='./' """
 
+    if type(image)==str:
+        image = cv2.imread(image)
+
     DF = pd.DataFrame()
     DF["contour"] = contours
-    DF["moments"] = moments
+    DF["moments"] = [cv2.moments(c) for c in contours]
+    DF["area"] = [cv2.contourArea(c) for c in contours]
+
     X = []
     Y = []
     cXY = []
     cR = []
+    bboxH = []
+    bboxW = []
     for c in contours:
+        # Get position
         M = cv2.moments(c)
         if M["m00"] != 0:
             x = int((M["m10"] / M["m00"]))-10
@@ -638,13 +632,23 @@ def export_contour_data(image, contours, moments, prefix, conversion_factor=None
             x,y = 0,0
         X.append(x)
         Y.append(y)
+        # Minimum circle
         min_c_xy, min_c_r = cv2.minEnclosingCircle(c)
         cXY.append(min_c_xy)
         cR.append(min_c_r)
+        # Bounding box
+        bbx, bby, bbw, bbh = cv2.boundingRect(c)
+        bboxH.append(bbh)
+        bboxW.append(bbw)
+
     DF["xy"] = list(zip(X,Y))
     DF["min_circle_xy"] = cXY
     DF["min_circle_r"] = cR
-    DF["area_pixels"] = [cv2.contourArea(c) for c in contours]
+    DF["bbox_height"] = bboxH
+    DF["bbox_width"] = bboxW
+    DF["aspect_ratio"] = DF["bbox_width"]/DF["bbox_height"]
+    DF["bbox_area"] = DF["bbox_width"]*DF["bbox_height"]
+    DF["extent"] = DF["area"]/DF["bbox_area"]
     DF["convex_hull"] = [cv2.convexHull(c) for c in contours]
     DF["convexity"] = [cv2.isContourConvex(c) for c in contours]
     DF["solidity"] = [float(cv2.contourArea(c))/cv2.contourArea(cv2.convexHull(c)) for c in contours]
@@ -675,11 +679,17 @@ def export_contour_data(image, contours, moments, prefix, conversion_factor=None
     if conversion_factor and units:
         DF["area_{}".format(units)] = DF["area_pixels"]*conversion_factor
 
-    DF.to_csv(os.path.join(output_dir, "{}.contour_data.csv".format(prefix)))
-    DF.to_pickle(os.path.join(output_dir, "{}.contour_data.pkl".format(prefix)))
+    # Export summary statistics
+    is_number = np.vectorize(lambda x: np.issubdtype(x, np.number))
+    numeric = DF[DF.columns[is_number(DF.dtypes)]]
+    summary = numeric.describe()
+    summary.to_csv(Path(output_dir) / "{}.summary.csv".format(prefix))
+    # Export contours and individual metrics
+    DF.to_csv(Path(output_dir) / "{}.contour_data.csv".format(prefix))
+    DF.to_pickle(Path(output_dir) / "{}.contour_data.pkl".format(prefix))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def render_contour_plots(image, border_contour, contours, prefix, dpi=300, output_dir="./"):
+def render_contour_plots(image, border_contour, contours, prefix, dpi=300, output_dir="./", color = (0, 255, 255), contour_thickness=3):
     """Creates two contour plots: 1) border and interior contours overlaid on image 2) border and interior
     contours overlaid on image with contour indices for reference.
 
@@ -692,27 +702,30 @@ def render_contour_plots(image, border_contour, contours, prefix, dpi=300, outpu
     prefix : <str> Prefix for output files (e.g. prefix.noindex.tif, prefix.tif)
     dpi : <int> Output image resolution. Default=300
     output_dir : <str> Path to output directory. Default='./'
-    figsize : <tuple> Output figure size. Default= original image size
     """
     # Get figure size
+    if type(image)==str:
+        image = cv2.imread(image)
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
     height, width, depth = image.shape
     figsize = width / float(dpi), height / float(dpi)
 
     # No index image
     canvas = image.copy()
     fig, ax = plt.subplots(ncols=1, figsize=figsize)
-    cv2.drawContours(canvas, contours=border_contour, contourIdx=-1, color=(255,0,0), thickness=2)
-    cv2.drawContours(canvas, contours=contours, contourIdx=-1, color=(0,255,255), thickness=2)
+    cv2.drawContours(canvas, contours=border_contour, contourIdx=-1, color=color, thickness=contour_thickness)
+    cv2.drawContours(canvas, contours=contours, contourIdx=-1, color=color, thickness=contour_thickness)
     ax.imshow(canvas)
     ax.axis('off')
     # plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "{}.noindex.tif".format(prefix)), dpi=dpi, transparent=True)
+    plt.savefig(Path(output_dir) / "{}.noindex.tif".format(prefix), dpi=dpi, transparent=True)
     plt.close()
 
     # Indexed image
     canvas = image.copy()
     fig, ax = plt.subplots(ncols=1, figsize=figsize)
-    cv2.drawContours(canvas, contours=border_contour, contourIdx=-1, color=(255,0,0), thickness=2)
+    if border_contour:
+        cv2.drawContours(canvas, contours=border_contour, contourIdx=-1, color=color, thickness=contour_thickness)
     # Plot indexed contours
     for i, c in enumerate(contours):
         M = cv2.moments(c)
@@ -721,51 +734,48 @@ def render_contour_plots(image, border_contour, contours, prefix, dpi=300, outpu
             cY = int((M["m01"] / M["m00"]))
         else:
             cX,cY = 0,0
-        cv2.drawContours(canvas, [c], -1, (0, 255, 255), 2)
+        cv2.drawContours(canvas, contours=[c], contourIdx=-1, color=color, thickness=contour_thickness)
         ax.text(x=cX, y=cY, s=u"{}".format(i), color="black", size=8)
 
     ax.imshow(canvas)
     ax.axis('off')
-    # plt.tight_layout()
-    plt.savefig(os.path.join(output_dir, "{}.tif".format(prefix)), dpi=dpi, transparent=True)
+    plt.savefig(Path(output_dir) / "{}.tif".format(prefix), dpi=dpi, transparent=True)
     plt.close()
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=1000, winH=1000, Amin=50, Amax=10e6,
-                  image=None, output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, debug=False, **kwargs):
+def process_image(image_path, neighborhood=10, prefix=None, stepsize=500, winW=1000, winH=1000, Amin=50, Amax=10e6, sliding_window=True,
+                  output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, debug=False, **kwargs):
     """Parameters
     ----------
-    filepath : <str> Filepath to query image.
-    stepsize : <int> Slide step size in pixels (currently the same in x and y directions)
-    winW : <int> Window width in pixels
-    winH : <int> Window height in pixels
-    Amin : <int> Minimum contour area in pixels
-    Amax : <int> Maximum contour area in pixels
-    neighborhood : <int> Neighborhood size in pixels determining a unique contour
-    prefix : <str> New prefix for output files. By default the new files will reflect the input file's basename
-    image : <numpy.ndarray> Query image. Note that is only for explicitly reading an
-        image in cv2 or skimage format, NOT an image from a filepath. Default=None
-    output_dir : <str> Path to output directory. Default='./'
-    border_contour : <np.ndarray> Border contour. If set to 'DETECT', the method `mcf` will
+    image <str> or <numpy.ndarray> : Query image. If string, is assumed to be an image filepath; if numpy.ndarray,
+        assumed to be in cv2 or numpy format.
+    stepsize <int> : Slide step size in pixels (currently the same in x and y directions)
+    winW <int> : Window width in pixels
+    winH <int> : Window height in pixels
+    Amin <int> : Minimum contour area in pixels
+    Amax <int> : Maximum contour area in pixels
+    sliding_window <bool> : Use sliding window contour detection. Default=True
+    neighborhood <int> : Neighborhood size in pixels determining a unique contour
+    prefix <str> : New prefix for output files. By default the new files will reflect the input file's basename
+    output_dir <str> : Path to output directory. Default='./'
+    border_contour <np.ndarray> : Border contour. If set to 'DETECT', the method `mcf` will
         be used to find the border contour. Default=`DETECT`
-    figsize : <tuple> Output figure size. Default=(16,16)
-    debug : <bool> writes debugging information and plots each step
+    debug <bool> : writes debugging information and plots each step
     **kwargs : kwargs for `mcf`
     """
 
     if debug:
         print("[{}] Working directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), os.getcwd()))
         print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir))
-    if filepath:
-        image = cv2.imread(filepath)
-        if not prefix:
-            prefix = ".".join(re.split("\.", os.path.basename(filepath))[:-1])
-        if debug:
-            print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), filepath))
-    # if image:
-    #     if debug: print("Working with image not from file...")
-    #     image = image.copy()
+    input_path = Path(image_path)
+    image = cv2.imread(str(input_path))
+    if not prefix:
+        prefix = input_path.stem
+    if debug:
+        print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), input_path.absolute()))
+
     """Denoise"""
+    print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     image = cv2.fastNlMeansDenoisingColored(image.copy(), None, 10, 10, 7, 21)
     if border_contour != 'DETECT':
         if debug: print("[{}] Border contour given; skipping border detection".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
@@ -774,26 +784,33 @@ def process_image(filepath, neighborhood=10, prefix=None, stepsize=500, winW=100
         border_contour = mcf(image=image, extract_border=True, **kwargs)
 
     print("[{}] Finding contours...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    # contours, s_contours, contour_hulls = sliding_contour_finder(image=image.copy(), stepsize=stepsize, winW=winW,
-    #            winH=winH, border_contour=border_contour, neighborhood=neighborhood, **kwargs)
-    contours = mcf(image=image, **kwargs)
+    if sliding_window:
+        contours = sliding_contour_finder(image=image.copy(), stepsize=stepsize, winW=winW,
+                 winH=winH, border_contour=border_contour, neighborhood=neighborhood, **kwargs)
+    else:
+        contours = mcf(image=image, **kwargs)
     contours = contour_size_selection(contours, Amin=Amin, Amax=Amax)
-    print("Found {} contours".format(len(contours)))
+    print("[{}] Found {} contours".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), len(contours)))
     print("[{}] Exporting contour data...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    # Export all contours
-    export_contour_data(image=image, contours=contours, moments=[cv2.moments(c) for c in contours], conversion_factor=None,
+    # Export contours
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir():
+        output_dir.mkdir(parents=True, exist_ok=True)
+    export_contour_data(image=image, contours=contours, conversion_factor=None,
                         units=None, prefix="{}.ALL".format(prefix), output_dir=output_dir)
+
     print("[{}] Contour data exported to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    print(os.path.join(output_dir, "{}.contour_data.csv".format("{}.ALL".format(prefix))))
-    print(os.path.join(output_dir, "{}.contour_data.pkl".format("{}.ALL".format(prefix))))
+    print("\t{}".format(Path(output_dir) / "{}.summary.csv".format(prefix)))
+    print("\t{}".format(Path(output_dir) / "{}.contour_data.csv".format(prefix)))
+    print("\t{}".format(Path(output_dir) / "{}.contour_data.pkl".format(prefix)))
 
     if print_plots:
         print("[{}] Plotting...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
         render_contour_plots(image=image, border_contour=border_contour, contours=contours, prefix=prefix, dpi=300, output_dir=output_dir)
 
-        print("[{}] Plot saved to\n\t{} and\n\t{}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'),
-                                                          os.path.join(output_dir, "{}.tif".format(prefix)),
-                                                          os.path.join(output_dir, "{}.noindex.tif".format(prefix))))
+        print("[{}] Contour plots saved to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        print("\t{}".format(Path(output_dir) / "{}.tif".format(prefix)))
+        print("\t{}".format(Path(output_dir) / "{}.noindex.tif".format(prefix)))
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def query_yes_no(question, default):
@@ -838,13 +855,16 @@ def main():
                          ╰╯
 """)
     parser = argparse.ArgumentParser()
-    parser.add_argument("input", type=str,
+    parser.add_argument("--input", type=str,
                     help="Filepath to query image")
-    parser.add_argument("output_dir", type=str, default='./',
+    parser.add_argument("--output_dir", type=str, default='./',
                     help="Path to output directory. Default='./'")
     parser.add_argument("--prefix", type=str,
                     action="store", dest="prefix",
                     help="New prefix for output files. By default the new files will reflect the input file's basename")
+    parser.add_argument("--sliding-window", type=bool, default=True,
+                    action="store", dest="sliding_window",
+                    help="Use sliding window approach. Default=True")
     parser.add_argument("--stepsize", type=int,
                     action="store", dest="stepsize",
                     help="Slide step size in pixels (same in x and y directions). Default=500")
@@ -857,9 +877,6 @@ def main():
     parser.add_argument("--neighborhood", type=int, default=10,
                     action="store", dest="neighborhood",
                     help="Neighborhood size in pixels determining a unique contour. Default=10")
-    parser.add_argument("--figsize", type=tuple, default=(16,16),
-                    action="store", dest="figsize",
-                    help="Output figure size. Default=(16,16)")
     parser.add_argument("--dpi", type=int, default=300,
                     action="store", dest="dpi",
                     help="Output image resolution in pixels. Default=300")
@@ -895,7 +912,7 @@ def main():
                         help="Maximum contour area in pixels")
 
     args = parser.parse_args()
-        
+
     kwargs = {}
     kwargs['k_blur'] = args.k_blur
     kwargs['C'] = args.C
@@ -920,18 +937,31 @@ def main():
         stepsize = args.stepsize
 
     if not args.prefix:
-        prefix = ".".join(re.split("\.", os.path.basename(args.input))[:-1])
+        prefix = Path(args.input).stem
     else:
         prefix = args.prefix
 
 
-    print("[{}] Circumscriptor command:\n\t python circumscriptor.py --prefix {} --stepsize {} --winW {} --winH {} --neighborhood {} --figsize {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {}".format(
-        datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, stepsize, winW, winH, args.neighborhood, args.figsize, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, args.Amin, args.Amax))
-    print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), args.input))
-    print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), args.output_dir))
+    print("[{}] Circumscriptor command:\n\t python circumscriptor.py --prefix {} --sliding-window {} --stepsize {} --winW {} --winH {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d}".format(
+        datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, args.sliding_window, stepsize, winW, winH, args.neighborhood, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, int(args.Amin), int(args.Amax)))
 
-    if os.path.exists(os.path.join(args.output_dir, prefix+".ALL.contour_data.csv")):
-        print("\tFound pickle for {}.".format(prefix))
+    if args.input.startswith("~/"):
+        input_path = Path(Path.home() / args.input[2:])
+    else:
+        input_path = Path(args.input).absolute().resolve()
+    if args.output_dir.startswith("~/"):
+        output_dir_path = Path(Path.home() / args.output_dir[2:])
+    else:
+        output_dir_path = Path(args.output_dir).absolute().resolve()
+
+    print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), input_path.absolute()))
+    print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir_path.absolute()))
+
+    suffixes = ["summary.csv", "contour_data.csv", "contour_data.pkl", "tif", "noindex.tif"]
+    conflicts = [output_dir_path / "{}.{}".format(prefix, suffix) for suffix in suffixes]
+
+    if any([c.exists() for c in conflicts]):
+        print("\tFound existing files of form {}.*".format(output_dir_path / prefix))
         response = query_yes_no("Would you like to DELETE and OVERWRITE?", None)
         if response==True:
             print("\tRemoving and rerunning...")
@@ -939,8 +969,8 @@ def main():
             print("\tDelete output files or change output prefix to rerun analysis")
             sys.exit()
 
-    process_image(filepath=args.input, prefix=prefix, stepsize=stepsize, winW=winW, winH=winH,
-                  Amin=args.Amin, Amax=args.Amax, neighborhood=args.neighborhood, output_dir=args.output_dir,
+    process_image(image_path=input_path, prefix=prefix, sliding_window=args.sliding_window, stepsize=stepsize, winW=winW, winH=winH,
+                  Amin=args.Amin, Amax=args.Amax, neighborhood=args.neighborhood, output_dir=output_dir_path,
                   dpi=args.dpi, debug=args.debug, **kwargs)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
