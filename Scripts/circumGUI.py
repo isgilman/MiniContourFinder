@@ -102,7 +102,7 @@ class ContourApp(QWidget):
         """Denoise"""
         print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
         self.cv2_image = cv2.cvtColor(cv2.imread(self.image_path), cv2.COLOR_BGR2RGB)
-        # self.cv2_image = cv2.fastNlMeansDenoisingColored(self.cv2_image.copy(), None, 10, 10, 7, 21)
+        self.cv2_image = cv2.fastNlMeansDenoisingColored(self.cv2_image.copy(), None, 10, 10, 7, 21)
         print("[{}] Finished denoising".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
         self.__originalH__, self.__originalW__, self.__originalD__ = self.cv2_image.shape
 
@@ -149,7 +149,7 @@ class ContourApp(QWidget):
         self.grid_layout.addWidget(self.C, 1, 8, 1, 2)
 
         self.blocksize = QSlider(QtCore.Qt.Horizontal)
-        self.blocksize.setRange(2, 100)
+        self.blocksize.setRange(2, 200)
         self.blocksize.setValue(8)
         self.blocksize.setTickInterval(1)
         self.blocksize.setTickPosition(QSlider.TicksBelow)

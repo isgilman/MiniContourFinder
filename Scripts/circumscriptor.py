@@ -125,7 +125,7 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     thresh = cv2.adaptiveThreshold(src=blur, maxValue=255, adaptiveMethod=cv2.ADAPTIVE_THRESH_GAUSSIAN_C, thresholdType=cv2.THRESH_BINARY, blockSize=blocksize, C=C)
     """Laplacian"""
     if debug: print("Laplacian...")
-    laplacian = cv2.Laplacian(src=thresh, ddepth=cv2.CV_16S, ksize=k_laplacian, )
+    laplacian = cv2.Laplacian(src=thresh, ddepth=cv2.CV_16S, ksize=k_laplacian,)
     """Dilate"""
     if debug: print("Dilate...")
     kernel = cv2.getStructuringElement(shape=cv2.MORPH_RECT, ksize=(k_dilate, k_dilate))
@@ -139,6 +139,8 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     tozero = cv2.threshold(gradient, 127, 255, cv2.THRESH_TOZERO)
     tozero = np.uint8(np.uint8(tozero[1]))
     binary = cv2.inRange(tozero, 0, 100)
+    # binary = cv2.threshold(np.uint8(gradient), 0, 255, cv2.THRESH_BINARY+cv2.THRESH_OTSU)
+
     """Foreground clean up"""
     if debug: print("Foreground...")
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_foreground, k_foreground))
@@ -161,7 +163,7 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
 
     """Find contours"""
     if debug: print("Drawing contours...")
-    new_img, contours, hierarchy = cv2.findContours(image=flood.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
+    new_img, contours, hierarchy = cv2.findContours(image=flood.copy(), mode=cv2.RETR_TREE, method=cv2.CHAIN_APPROX_SIMPLE)
 
     return contours
 
