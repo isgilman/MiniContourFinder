@@ -4,6 +4,8 @@ from PyQt5.QtGui import QPixmap, QImage, QPixmapCache
 from circumscriptor import *
 import pyperclip
 import pathlib as pl
+import matplotlib
+matplotlib.use('TkAgg')
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -537,10 +539,17 @@ class PhotoViewer(QtWidgets.QGraphicsView):
 
 if __name__ == '__main__':
     print("""
-    ╭━━┳┳┳━┳━━┳┳┳━━┳━━┳┳┳╮
-    ┃ ━┫┃╭━┫ ━┫┃┃┃┃┃  ┃┃┃┃
-    ╰━━┻┻╯ ╰━━┻━┻┻┻╋━╮┣━┻╯
-                   ╰━━╯
+   __  ___   _          _               
+  /  |/  /  (_)  ___   (_)              
+ / /|_/ /  / /  / _ \ / /               
+/_/__/_/  /_/  /_//_//_/                
+ / ___/ ___   ___  / /_ ___  __ __  ____
+/ /__  / _ \ / _ \/ __// _ \/ // / / __/
+\___/__\___//_//_/\__/ \___/\_,_/ /_/   
+  / __/  (_)  ___  ___/ / ___   ____    
+ / _/   / /  / _ \/ _  / / -_) / __/    
+/_/    /_/  /_//_/\_,_/  \__/ /_/       
+                                        
     """)
 
     app = QApplication(sys.argv)
