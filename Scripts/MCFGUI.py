@@ -1,7 +1,7 @@
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import QPixmap, QImage, QPixmapCache
-from circumscriptor import *
+from utilities import *
 import pyperclip
 import pathlib as pl
 import matplotlib
