@@ -1,51 +1,20 @@
 #!/usr/bin/env python
 # coding: utf-8
-
 # core
-import sys, os, re, argparse
+import sys, os, re, subprocess, platform, pickle
 import numpy as np
 from datetime import datetime
-try: import pandas as pd
-except ImportError:
-    print("\n\tError: pandas is not installed/loaded")
-    sys.exit()
-try: from scipy import spatial
-except ImportError:
-    print("\n\tError: scipy is not installed/loaded")
-    sys.exit()
-try: from tqdm import tqdm
-except ImportError:
-    print("\n\tError: tqdm is not installed/loaded")
-    sys.exit()
+import pandas as pd
+from scipy import spatial
+from tqdm import tqdm
+from multiprocessing import Pool
+from functools import partial
 # plotting
 import matplotlib.pyplot as plt
 # image recognition
-try: import cv2
-except ImportError:
-    print("\n\tError: cv2 is not installed/loaded")
-    sys.exit()
-try: import imutils
-except ImportError:
-    print("\n\tError: imutils is not installed/loaded")
-    sys.exit()
-try:
-    import pytesseract
-    from pytesseract import image_to_string
-except ImportError:
-    print("\n\tError: pytesseract is not installed/loaded")
-    sys.exit()
-try:
-    import skimage.measure
-    from skimage import io, data
-    from skimage.util import img_as_float, img_as_ubyte
-except ImportError:
-    print("\n\tError: skimage is not installed/loaded")
-    sys.exit()
-try:
-    from pathlib import Path
-except ImportError:
-    print("\n\tError: pathlib is not installed/loaded")
-    sys.exit()
+import cv2
+from pytesseract import image_to_string
+from pathlib import Path
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 class Vividict(dict):
@@ -59,7 +28,7 @@ def flatten(l):
     return [item for sublist in l for item in sublist]
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def flood_fill(image):
+def flood_fill(image, progress_bar=True):
     """Flood fill from the edges."""
     mirror = image.copy()
     height, width = image.shape[:2]
@@ -68,29 +37,24 @@ def flood_fill(image):
             cv2.floodFill(mirror, None, (0, row), 0)
         if mirror[row, width-1] == 255:
             cv2.floodFill(mirror, None, (width-1, row), 0)
-
-    for col in tqdm(range(width), desc='Flooding background', leave=False):
-        if mirror[0, col] == 255:
-            cv2.floodFill(mirror, None, (col, 0), 0)
-        if image[height-1, col] == 255:
-            cv2.floodFill(mirror, None, (col, height-1), 0)
+    if progress_bar:
+        for col in tqdm(range(width), desc='Flooding background', leave=False):
+            if mirror[0, col] == 255:
+                cv2.floodFill(mirror, None, (col, 0), 0)
+            if image[height-1, col] == 255:
+                cv2.floodFill(mirror, None, (col, height-1), 0)
+    else:
+        for col in range(width):
+            if mirror[0, col] == 255:
+                cv2.floodFill(mirror, None, (col, 0), 0)
+            if image[height-1, col] == 255:
+                cv2.floodFill(mirror, None, (col, height-1), 0)
 
     return mirror
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def store_evolution_in(lst):
-    """Returns a callback function to store the evolution of the level sets in
-    the given list.
-    """
-
-    def _store(x):
-        lst.append(np.copy(x))
-
-    return _store
-
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradient=3, k_foreground=7,
-        extract_border=False, skip_flood=False, debug=False):
+        extract_border=False, offsetX=0, offsetY=0, skip_flood=False, debug=False, progress_bar=True):
     """Extracts contours from an image. Can be used to extract a contour surrounding the
     entire foreground border.
 
@@ -111,14 +75,14 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     -------
     contours : <list> A list of contours"""
     """Gray"""
-    if debug: print("Gray...")
+    if debug: print("[PID {}] Gray...".format(os.getpid()))
     gray = cv2.cvtColor(src = image, code=cv2.COLOR_RGB2GRAY)
     """Adaptive histogram normalization"""
     gridsize = int(min(0.01*max(image.shape[:2]), 8))
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(gridsize, gridsize))
-    hequalized = clahe.apply(gray)
+    hequalized = gray#clahe.apply(gray)
     """Blur"""
-    if debug: print("Blur...")
+    if debug: print("[PID {}] Blur...".format(os.getpid()))
     blur = cv2.GaussianBlur(src=hequalized, ksize=(k_blur, k_blur), sigmaX=2, )
     """Adaptive Gaussian threshold"""
     if debug: print("Adapt Gauss Thresh...")
@@ -149,7 +113,7 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     if skip_flood:
         flood = foreground.copy()
     else:
-        flood = flood_fill(foreground)
+        flood = flood_fill(foreground, progress_bar=progress_bar)
     if extract_border:
         """Get border"""
         if debug: print("Getting border...")
@@ -162,8 +126,11 @@ def mcf(image, k_blur=9, C=3, blocksize=15, k_laplacian=5, k_dilate=5, k_gradien
     """Find contours"""
     if debug: print("Drawing contours...")
     contours, hierarchy = cv2.findContours(image=flood.copy(), mode=cv2.RETR_EXTERNAL, method=cv2.CHAIN_APPROX_SIMPLE)
+    return [c + [offsetX, offsetY] for c in contours]
 
-    return contours
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def parallel_mcf(window, **kwargs):
+    return mcf(image=window[2], offsetX=window[0], offsetY=window[1], progress_bar=False, **kwargs)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def contour_size_selection(contours, pmin=50, pmax=10e5, Amin=50, Amax=10e6):
@@ -221,7 +188,7 @@ def sliding_window(image, stepSize, windowSize):
             yield (x, y, image[y:y + windowSize[1], x:x + windowSize[0]])
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_contour, skip_flood=False, debug=False, **kwargs):
+def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_contour, skip_flood=False, debug=False, cpus=1, **kwargs):
     """Uses a sliding-window approach to find contours across a large image. Uses KDTree algorithm to
     remove duplicated contours from overlapping windows.
 
@@ -260,7 +227,7 @@ def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_con
         if window.sum() == 0: continue
         """Running mini contour finder in window"""
         if debug: print("Running mini contour finder...")
-        window_contours = mcf(window, skip_flood=skip_flood,  **kwargs)
+        window_contours = mcf(window, skip_flood=skip_flood, progress_bar=False,  **kwargs)
         if debug: print("Found {} contours in window {}".format(len(window_contours), i))
 
         """Remove overlapping contours"""
@@ -289,6 +256,28 @@ def sliding_contour_finder(image, stepsize, winW, winH, neighborhood, border_con
 
     return contours
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def remove_redundant_contours(contours, neighborhood=10):
+    moments = []
+    nonredundant = []
+    for c in contours:
+        M = cv2.moments(c)
+        if M["m00"] != 0:
+            cX = int((M["m10"] / M["m00"])) # moment X
+            cY = int((M["m01"] / M["m00"])) # moment Y
+        else:
+            cX,cY = 0,0
+
+        if len(moments)==0:
+            nonredundant.append(c)
+            moments.append([cX, cY])
+        else: # if previous moments exist, find the distance and index of the nearest neighbor
+            distance, index = spatial.KDTree(moments).query([cX, cY])
+            if distance > neighborhood: # add point if moment falls outside of neighborhood
+                nonredundant.append(c)
+                moments.append([cX, cY])
+
+    return nonredundant
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def refine_contours(image, contours, border_contours, overlap_thresh=0, pmin=50, pmax=10e5, Amin=50, Amax=10e6,
                     min_cell_area=100, check_intersection=True, separate_cells=False):
@@ -595,8 +584,26 @@ def ContourOverlapTest(image, contours, background_contours, return_overlapping=
 
     return selected
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def getContourRBG(contour, image):
+    clone = image.copy()
+    mask = np.zeros_like(clone)  # Create mask where white is what we want, black otherwise
+    cv2.drawContours(mask, contours, 0, 255, -1)  # Draw filled contour in mask
+    out = np.zeros_like(image)  # Extract out the object and place into output image
+    out[mask == 255] = image[mask == 255]
+    pixelpoints = np.transpose(np.nonzero(mask))
 
-def export_contour_data(image, contours, prefix, conversion_factor=None, units=None, output_dir="./"):
+    return image[flatten(pixelpoints[:, :2])[::2], flatten(pixelpoints[:, :2])[1::2]].mean(axis=0) / 255
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def contour_xy(contour):
+    M = cv2.moments(contour)
+    if M["m00"] != 0:
+        return (int((M["m10"] / M["m00"]))-10, int((M["m01"] / M["m00"])))
+    else: 
+        return (0,0)
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def export_contour_data(contours, prefix, image, conversion_factor=None, units=None, output_dir="./", get_color=False):
     """Exports relevant data on contours in CSV and pickle format.
 
     Parameters
@@ -607,86 +614,34 @@ def export_contour_data(image, contours, prefix, conversion_factor=None, units=N
     units : <str> Associated conversion factor units. Default=None
     prefix : <str> Prefix for output files (e.g. PREFIX.contour_data.pkl, PREFIX.contour_data.csv)
     output_dir : <str> Path to output directory. Default='./' """
-
-    if type(image)==str:
-        image = cv2.imread(image)
-
+    
     DF = pd.DataFrame()
     DF["contour"] = contours
-    DF["moments"] = [cv2.moments(c) for c in contours]
-    DF["area"] = [cv2.contourArea(c) for c in contours]
-
-    X = []
-    Y = []
-    cXY = []
-    cR = []
-    bboxH = []
-    bboxW = []
-    for c in contours:
-        # Get position
-        M = cv2.moments(c)
-        if M["m00"] != 0:
-            x = int((M["m10"] / M["m00"]))-10
-            y = int((M["m01"] / M["m00"]))
-        else:
-            x,y = 0,0
-        X.append(x)
-        Y.append(y)
-        # Minimum circle
-        min_c_xy, min_c_r = cv2.minEnclosingCircle(c)
-        cXY.append(min_c_xy)
-        cR.append(min_c_r)
-        # Bounding box
-        bbx, bby, bbw, bbh = cv2.boundingRect(c)
-        bboxH.append(bbh)
-        bboxW.append(bbw)
-
-    DF["xy"] = list(zip(X,Y))
-    DF["min_circle_xy"] = cXY
-    DF["min_circle_r"] = cR
-    DF["bbox_height"] = bboxH
-    DF["bbox_width"] = bboxW
-    DF["aspect_ratio"] = DF["bbox_width"]/DF["bbox_height"]
-    DF["bbox_area"] = DF["bbox_width"]*DF["bbox_height"]
-    DF["extent"] = DF["area"]/DF["bbox_area"]
+    DF["area"] = np.array(list(map(cv2.contourArea, contours)), dtype=object)
+    DF["moment_XY"] = [contour_xy(c) for c in contours]
+    cRXY = np.array(list(map(cv2.minEnclosingCircle, contours)), dtype=object)
+    DF["min_circle_xy"] = cRXY[:,0]
+    DF["min_circle_r"] = cRXY[:,1]
+    bbox = np.array([cv2.boundingRect(c) for c in contours])
+    DF["bbox_x"], DF["bbox_y"], DF["bbox_h"], DF["bbox_w"] = bbox[:,0], bbox[:,1], bbox[:,2], bbox[:,3]
+    DF["bbox_area"] = DF["bbox_w"]*DF["bbox_h"]
+    DF["aspect_ratio"] = DF["bbox_w"]/DF["bbox_h"]
     DF["convex_hull"] = [cv2.convexHull(c) for c in contours]
     DF["convexity"] = [cv2.isContourConvex(c) for c in contours]
     DF["solidity"] = [float(cv2.contourArea(c))/cv2.contourArea(cv2.convexHull(c)) for c in contours]
-    DF["equivalent_d"] = [np.sqrt(4*cv2.contourArea(c)/np.pi) for c in contours]
-
-    """Get mean color"""
-    R = []
-    G = []
-    B = []
-    for i, c in enumerate(contours):
-        clone = image.copy()
-        mask = np.zeros_like(clone)  # Create mask where white is what we want, black otherwise
-        cv2.drawContours(mask, contours, i, 255, -1)  # Draw filled contour in mask
-        out = np.zeros_like(image)  # Extract out the object and place into output image
-        out[mask == 255] = image[mask == 255]
-        pixelpoints = np.transpose(np.nonzero(mask))
-
-        r, g, b = image[flatten(pixelpoints[:, :2])[::2], flatten(pixelpoints[:, :2])[1::2]].mean(axis=0) / 255
-        R.append(r)
-        G.append(g)
-        B.append(b)
-
-    DF["mean_R"] = R
-    DF["mean_G"] = G
-    DF["mean_B"] = B
-
+    DF["equivalent_diameter"] = [np.sqrt(4*cv2.contourArea(c)/np.pi) for c in contours]
 
     if conversion_factor and units:
         DF["area_{}".format(units)] = DF["area_pixels"]*conversion_factor
 
+    if get_color:
+        if type(image)==str:
+            image = cv2.imread(image)
+        DF["RBG"] = np.array(list(map(getContourRBG, contours)), dtype=object)
     # Export summary statistics
-    # is_number = np.vectorize(lambda x: np.issubdtype(x, np.number))
-    # numeric = DF[DF.columns[is_number(DF.dtypes)]]
-    # summary = numeric.describe()
-    # summary.to_csv(Path(output_dir) / "{}.summary.csv".format(prefix))
-    # Export contours and individual metrics
-    DF.to_csv(Path(output_dir) / "{}.contour_data.csv".format(prefix))
-    DF.to_pickle(Path(output_dir) / "{}.contour_data.pkl".format(prefix))
+    DF.to_csv(Path(output_dir) / "{}.contour_summary_stats.csv".format(prefix))
+    with open(Path(output_dir) / "{}.contours.pickle", 'wb') as f:
+        pickle.dump(contours, f)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def render_contour_plots(image, border_contour, contours, prefix, dpi=300, output_dir="./", color = (0, 255, 255), contour_thickness=3):
@@ -744,7 +699,7 @@ def render_contour_plots(image, border_contour, contours, prefix, dpi=300, outpu
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def process_image(image_path, neighborhood=10, prefix=None, stepsize=500, winW=1000, winH=1000, Amin=50, Amax=10e6, sliding_window=True,
-                  output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, debug=False, **kwargs):
+                  output_dir="./", border_contour='DETECT', print_plots=True, dpi=300, debug=False, cpus=1, **kwargs):
     """Parameters
     ----------
     image <str> or <numpy.ndarray> : Query image. If string, is assumed to be an image filepath; if numpy.ndarray,
@@ -780,13 +735,17 @@ def process_image(image_path, neighborhood=10, prefix=None, stepsize=500, winW=1
     if border_contour != 'DETECT':
         if debug: print("[{}] Border contour given; skipping border detection".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     else:
-        print("[{}] Getting border...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        print("[{}] Getting image border...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
         border_contour = mcf(image=image, extract_border=True, **kwargs)
 
     print("[{}] Finding contours...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     if sliding_window:
-        contours = sliding_contour_finder(image=image.copy(), stepsize=stepsize, winW=winW,
-                 winH=winH, border_contour=border_contour, neighborhood=neighborhood, **kwargs)
+        if cpus > 1:
+            contours = parallel_sliding_contour_finder(image=image.copy(), stepsize=stepsize, winW=winW, winH=winH, 
+            border_contour=border_contour, neighborhood=neighborhood, cpus=cpus, skip_flood=False, debug=debug, **kwargs)
+        else:
+            contours = sliding_contour_finder(image=image.copy(), stepsize=stepsize, winW=winW, winH=winH, 
+            border_contour=border_contour, neighborhood=neighborhood, skip_flood=False, debug=debug, **kwargs)
     else:
         contours = mcf(image=image, **kwargs)
     contours = contour_size_selection(contours, Amin=Amin, Amax=Amax)
@@ -797,7 +756,7 @@ def process_image(image_path, neighborhood=10, prefix=None, stepsize=500, winW=1
     if not output_dir.is_dir():
         output_dir.mkdir(parents=True, exist_ok=True)
     export_contour_data(image=image, contours=contours, conversion_factor=None,
-                        units=None, prefix="{}.ALL".format(prefix), output_dir=output_dir)
+                        units=None, prefix=prefix, output_dir=output_dir, get_color=False)
 
     print("[{}] Contour data exported to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     print("\t{}".format(Path(output_dir) / "{}.summary.csv".format(prefix)))
@@ -844,142 +803,11 @@ def query_yes_no(question, default):
         else:
             sys.stdout.write("Please respond with 'yes' or 'no' "
                              "(or 'y' or 'n').\n")
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def main():
-    print("""
-   __  ___   _          _               
-  /  |/  /  (_)  ___   (_)              
- / /|_/ /  / /  / _ \ / /               
-/_/__/_/  /_/  /_//_//_/                
- / ___/ ___   ___  / /_ ___  __ __  ____
-/ /__  / _ \ / _ \/ __// _ \/ // / / __/
-\___/__\___//_//_/\__/ \___/\_,_/ /_/   
-  / __/  (_)  ___  ___/ / ___   ____    
- / _/   / /  / _ \/ _  / / -_) / __/    
-/_/    /_/  /_//_/\_,_/  \__/ /_/       
-                                        
-""")
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input", type=str,
-                    help="Filepath to query image")
-    parser.add_argument("--output_dir", type=str, default='./',
-                    help="Path to output directory. Default='./'")
-    parser.add_argument("--prefix", type=str,
-                    action="store", dest="prefix",
-                    help="New prefix for output files. By default the new files will reflect the input file's basename")
-    parser.add_argument("--sliding-window", type=bool, default=True,
-                    action="store", dest="sliding_window",
-                    help="Use sliding window approach. Default=True")
-    parser.add_argument("--stepsize", type=int,
-                    action="store", dest="stepsize",
-                    help="Slide step size in pixels (same in x and y directions). Default=500")
-    parser.add_argument("--winW", type=int,
-                    action="store", dest="winW",
-                    help="Window width in pixels. Default=1000")
-    parser.add_argument("--winH", type=int,
-                    action="store", dest="winH",
-                    help="Window height in pixels. Default=1000")
-    parser.add_argument("--neighborhood", type=int, default=10,
-                    action="store", dest="neighborhood",
-                    help="Neighborhood size in pixels determining a unique contour. Default=10")
-    parser.add_argument("--dpi", type=int, default=300,
-                    action="store", dest="dpi",
-                    help="Output image resolution in pixels. Default=300")
-    parser.add_argument("--debug", type=bool, default=False,
-                    action="store", dest="debug",
-                    help="Writes debugging information and plots more steps")
-    parser.add_argument("--k_blur", type=int, default=9,
-                    action="store", dest="k_blur",
-                    help="blur kernel size; must be odd. Default=9")
-    parser.add_argument("--C", type=int, default=3,
-                    action="store", dest="C",
-                    help="Constant subtracted from mean during adaptive Gaussian smoothing. Default=3")
-    parser.add_argument("--blocksize", type=int, default=15,
-                    action="store", dest="blocksize",
-                    help="Neighborhood size for calculating adaptive Gaussian threshold; must be odd. Default=15")
-    parser.add_argument("--k_laplacian", type=int, default=5,
-                    action="store", dest="k_laplacian",
-                    help="Laplacian kernel size; must be odd. Default=5")
-    parser.add_argument("--k_dilate", type=int, default=5,
-                    action="store", dest="k_dilate",
-                    help="Dilation kernel size; must be odd. Default=5")
-    parser.add_argument("--k_gradient", type=int, default=5,
-                    action="store", dest="k_gradient",
-                    help="Gradient kernel size; must be odd. Default=3")
-    parser.add_argument("--k_foreground", type=int, default=7,
-                    action="store", dest="k_foreground",
-                    help="Foregound clean up kernel size; must be odd. Default=7")
-    parser.add_argument("--Amin", type=int, default=50,
-                        action="store", dest="Amin",
-                        help="Minimum contour area in pixel")
-    parser.add_argument("--Amax", type=int, default=10e6,
-                        action="store", dest="Amax",
-                        help="Maximum contour area in pixels")
-
-    args = parser.parse_args()
-
-    kwargs = {}
-    kwargs['k_blur'] = args.k_blur
-    kwargs['C'] = args.C
-    kwargs['blocksize'] = args.blocksize
-    kwargs['k_laplacian'] = args.k_laplacian
-    kwargs['k_dilate'] = args.k_dilate
-    kwargs['k_gradient'] = args.k_gradient
-    kwargs['k_foreground'] = args.k_foreground
-
-    h, w, c = cv2.imread(args.input).shape
-    if not args.winW:
-        winW = round((w / 5) / 100) * 100
-    else:
-        winW = args.winW
-    if not args.winH:
-        winH = round((h / 5) / 100) * 100
-    else:
-        winH = args.winH
-    if not args.stepsize:
-        stepsize = int(min([winH, winW])/2)
-    else:
-        stepsize = args.stepsize
-
-    if not args.prefix:
-        prefix = Path(args.input).stem
-    else:
-        prefix = args.prefix
-
-
-    print("[{}] Circumscriptor command:\n\t python circumscriptor.py --prefix {} --sliding-window {} --stepsize {} --winW {} --winH {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d}".format(
-        datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, args.sliding_window, stepsize, winW, winH, args.neighborhood, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, int(args.Amin), int(args.Amax)))
-
-    if args.input.startswith("~/"):
-        input_path = Path(Path.home() / args.input[2:])
-    else:
-        input_path = Path(args.input).absolute().resolve()
-    if args.output_dir.startswith("~/"):
-        output_dir_path = Path(Path.home() / args.output_dir[2:])
-    else:
-        output_dir_path = Path(args.output_dir).absolute().resolve()
-
-    print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), input_path.absolute()))
-    print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir_path.absolute()))
-
-    suffixes = ["summary.csv", "contour_data.csv", "contour_data.pkl", "tif", "noindex.tif"]
-    conflicts = [output_dir_path / "{}.{}".format(prefix, suffix) for suffix in suffixes]
-
-    if any([c.exists() for c in conflicts]):
-        print("\tFound existing files of form {}.*".format(output_dir_path / prefix))
-        response = query_yes_no("Would you like to DELETE and OVERWRITE?", None)
-        if response==True:
-            print("\tRemoving and rerunning...")
-        else:
-            print("\tDelete output files or change output prefix to rerun analysis")
-            sys.exit()
-
-    process_image(image_path=input_path, prefix=prefix, sliding_window=args.sliding_window, stepsize=stepsize, winW=winW, winH=winH, Amin=args.Amin, Amax=args.Amax, neighborhood=args.neighborhood, output_dir=output_dir_path, dpi=args.dpi, debug=args.debug, **kwargs)
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-if __name__ == "__main__":
-    start = datetime.now()
-    main()
-    end = datetime.now()
-    print("[{}] Time elapsed: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), end-start))
+def get_cpus_avail():
+    if platform.system() == "Linux":
+            return len(os.sched_getaffinity(0))
+    elif platform.system() == "Darwin":
+        stdout = subprocess.run(["sysctl","-n", "hw.ncpu"], capture_output=True, text=True).stdout
+        return int(re.findall('[0-9]+', stdout[0])[0])
