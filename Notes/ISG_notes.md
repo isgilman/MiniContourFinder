@@ -10,6 +10,7 @@ See the `README`.
 (compvision) ➜  ~ $ pip install imutils
 (compvision) ➜  ~ $ cd /Dropbox/GitHub_repos/CrossSection_DeepLearning/Notebooks
 (compvision) ➜  Notebooks git:(detection_sandbox) ✗ $ conda install -c conda-forge pillow
+(compvision) ➜  python -m ipykernel install --user --name compvision --display-name "Computer Vision (compvision)"
 ```
 
 You can install python modules within a jupyter notebook using
