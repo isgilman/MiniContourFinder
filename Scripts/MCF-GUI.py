@@ -1,28 +1,40 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import *
-from PyQt5.QtGui import QPixmap, QImage, QPixmapCache
-from circumscriptor import *
+#!/usr/bin/env python
+# coding: utf-8
+
+# Core
+import sys, cv2, uuid
+from ast import literal_eval
+from datetime import datetime
 import pyperclip
 import pathlib as pl
+import numpy as np
+np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
+# PyQt5
+from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtWidgets import *
+from PyQt5.QtGui import QPixmapCache
+# Plotting
 import matplotlib
-matplotlib.use('TkAgg')
+if sys.platform == 'darwin':
+    matplotlib.use("TkAgg")
+# Custom utilities
+from utilities import *
+from imagetools import *
 
 class MainWindow(QMainWindow):
-    def __init__(self, parent=None):
-        super(MainWindow, self).__init__(parent)
-        self.contour_app = ContourApp(self)
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        layout.addWidget(self.contour_app)
-        self.setCentralWidget(widget)
-
+    def __init__(self):
+        super().__init__()
+        # Initialize window
+        self.setWindowTitle('MCF - {}'.format(sys.argv[1]))
+        self.resize(1000, 400)
+        # Add toolbar with menu
         toolbar = QToolBar()
         self.addToolBar(toolbar)
 
         saveFile = QAction("&Save", self)
         saveFile.setShortcut("Ctrl+S")
-        saveFile.setStatusTip('Save File')
-        saveFile.triggered.connect(self.file_save)
+        saveFile.setStatusTip("Save File")
+        saveFile.triggered.connect(self.saveAll)
         toolbar.addAction(saveFile)
 
         openFile = QAction("&Open", self)
@@ -31,36 +43,62 @@ class MainWindow(QMainWindow):
         openFile.triggered.connect(self.file_open)
         toolbar.addAction(openFile)
 
-        self.setStatusBar(QStatusBar(self))
-        self.resize(1000, 600)
-        self.setWindowTitle('circumGUI - {}'.format(sys.argv[1]))
+        # Initialize widget with layout
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        # Set contour app as central widget
+        self.contour_app = ContourApp(self)
+        layout.addWidget(self.contour_app)
+        self.setCentralWidget(widget)
+        self.contour_app.update_plot()
+        self.contour_app.viewer.updateView()
+
         self.show()
+     
+    def saveAll(self):
+        saveDialog = QFileDialog.getSaveFileName(parent=self, 
+        caption="File prefix",
+        directory=Path(Path(sys.argv[1]).parent / Path(sys.argv[1]).stem).as_posix())
 
-    def file_save(self):
-        save_info = QFileDialog.getSaveFileName(self, "Save location")
-        output_path = pl.Path(save_info[0])
-        output_stem = output_path.stem
-        output_dir = output_path.parent
-        if len(self.contour_app.highlighted) < 1:
-            export_contours = self.contour_app.large_contours
-        else:
-            export_contours = self.contour_app.highlighted
+        if saveDialog[0] != '':
+            if len(self.contour_app.contour_DF) == 0 :
+                export_data = pd.DataFrame(np.zeros(shape=(len(self.contour_app.large_contours), 10)), 
+                columns=["uuid4", "contour", "C", "kBlur", "blocksize", "kDilate", "kGradient", "kForeground", "Amin", "Amax"], dtype=object)
+                export_data["contour"] = self.contour_app.large_contours
+                export_data["uuid4"] = [uuid.uuid4().hex for i in range(len(self.contour_app.large_contours))]
+                export_data["C"] = self.contour_app.C.value()
+                export_data["kBlur"] = self.contour_app.k_blur.value()
+                export_data["blocksize"] = self.contour_app.blocksize.value()
+                export_data["kDilate"] = self.contour_app.k_dilate.value()
+                export_data["kGradient"] = self.contour_app.k_gradient.value()
+                export_data["kForeground"] = self.contour_app.k_foreground.value()
+                export_data["Amin"] = self.contour_app.Amin.value()
+                export_data["Amax"] = self.contour_app.Amax.value()
+            else:
+                export_data = self.contour_app.contour_DF
 
-        export_contour_data(image=sys.argv[1], contours=export_contours,
-                            output_dir=output_dir, prefix=output_stem)
-        render_contour_plots(image=sys.argv[1], contours=export_contours, border_contour=None, contour_thickness=self.contour_app.contour_thickness.value(),
-                             output_dir=output_dir, prefix=output_stem, color=self.contour_app.highlight_color)
+            export_contour_data(image=sys.argv[1], contourDF=export_data,
+                                output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem)
+            render_contour_plots(image=sys.argv[1], contours=export_data["contour"].values, border_contour=None, contour_thickness=self.contour_app.contour_thickness.value(),
+                                output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem, color=self.contour_app.highlight_color)
+        else: return
 
     def file_open(self):
-        open_info = QFileDialog.getOpenFileName(self, "Open contour file (.pkl)", "./")
-        if open_info != ('', ''):
-            pickle = pd.read_pickle(open_info[0])
-            print("[{}] Loaded contours from {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), open_info[0]))
+        fileFilter = 'Contour data file (*.json)'
+        openDialog = QFileDialog.getOpenFileName(self, 
+            caption = "Open contour data file (.json)",
+            directory = Path(Path(sys.argv[1]).parent / Path(sys.argv[1]).stem).as_posix(),
+            filter = fileFilter)
+
+        if openDialog[0] != '':
             self.contour_app.select_contours.setChecked(True)
-            self.contour_app.contours = list(pickle["contour"])
-            self.contour_app.large_contours = list(pickle["contour"])
-            self.contour_app.highlighted = list(pickle["contour"])
+            loaded = pd.read_json(openDialog[0])
+            loaded = loaded[self.contour_app.contour_DF.columns]
+            loaded['contour'] = loaded['contour'].apply(np.array)
+            print("[{}] Loaded {} contours from {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), len(loaded), openDialog[0]))
+            self.contour_app.contour_DF = self.contour_app.contour_DF.append(loaded)
             self.contour_app.update_plot()
+        else:return
 
     def closeEvent(self, event):
         """Generate 'question' dialog on clicking 'X' button in title bar.
@@ -81,53 +119,51 @@ class MainWindow(QMainWindow):
         else:
             event.ignore()
 
-
 class ContourApp(QWidget):
+    """See the following StackOverflow post for embedding a QGraphicsView in
+    another widget:
+    https://stackoverflow.com/questions/35508711/how-to-enable-pan-and-zoom-in-a-qgraphicsview"""
     def __init__(self, parent=None):
-        super(ContourApp, self).__init__(parent=parent)
+        super().__init__(parent=parent)
 
         ### Create window with grid layout ###
-        self.resize(1000, 800)
         self.grid_layout = QGridLayout()
         self.setLayout(self.grid_layout)
+        self.click_x, self.click_y = (0,0)
         self.setMouseTracking(True)
-        self.click_x, self.click_y = (0, 0)
-        self.release_x, self.release_y = (0, 0)
 
-        ### Render image ###
-        self.viewer = PhotoViewer(self)
+        ### Initialize viewer ###
+        self.viewer = GraphicsView(self)
         self.grid_layout.addWidget(self.viewer, 0, 0, -1, 8) # Note that grid coords are (row, col, rowspan, colspan)
-        self.viewer.fitInView()
+        self.viewer.updateView()
         self.viewer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.viewer.setAlignment(QtCore.Qt.AlignTop)
-        self.image_path = sys.argv[1]
-        """Denoise"""
-        print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        self.cv2_image = cv2.cvtColor(cv2.imread(self.image_path), cv2.COLOR_BGR2RGB)
-        # self.cv2_image = cv2.fastNlMeansDenoisingColored(self.cv2_image.copy(), None, 10, 10, 7, 21)
-        print("[{}] Finished denoising".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        self.__originalH__, self.__originalW__, self.__originalD__ = self.cv2_image.shape
+
+        ### Add image and contours ###
+        self.image_path = Path(sys.argv[1])
+        self.denoised_path = Path("{}/{}.denoise{}".format(self.image_path.parent.as_posix(), self.image_path.stem, self.image_path.suffix))
+        if self.denoised_path.exists():
+            print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
+            self.cv2_image = cv2.imread(self.denoised_path.as_posix())
+        else:
+            print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+            self.cv2_image = cv2.fastNlMeansDenoisingColored(cv2.imread(self.image_path.as_posix()), None, 10, 10, 7, 21)
+            cv2.imwrite(filename=self.denoised_path.as_posix(), img=self.cv2_image)
+            print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
 
         # Get contours
-        self.contours = mcf(image=self.cv2_image, skip_flood=True)
+        self.contours = mcf(image=self.cv2_image)
         self.contour_color = (255, 0, 0)
         self.highlight_color = (255, 0, 255)
-        self.highlighted = []
+        self.contour_DF = pd.DataFrame(columns=["uuid4", "contour", "C", "kBlur", "blocksize", "kDilate", "kGradient", "kForeground"], dtype=object)
         cv2.drawContours(self.cv2_image, contours=self.contours, contourIdx=-1, color=self.contour_color, thickness=3)
-        if len(self.highlighted)>0:
-            cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color, thickness=3)
+        if len(self.contour_DF)>0:
+            cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=3)
 
         # Convert to Qimage object
-        self.np_image = cv2.cvtColor(self.cv2_image, cv2.COLOR_BGR2RGB)
-        self.totalBytes = self.np_image.nbytes
-        self.bytesPerLine = int(self.totalBytes / self.np_image.shape[0])
-        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], self.bytesPerLine, QImage.Format_RGB888)
-        self.pixmap = QPixmap(self.qimage)
-
+        self.pixmap = cv2pixmap(self.cv2_image)
         self.viewer.setPhoto(self.pixmap)
-        self.viewer.fitInView()
-        # Set up rubberband selection
-        self.rubberband = QRubberBand(QRubberBand.Rectangle, self.viewer)
+        self.viewer.updateView()
 
         ### Create sliders ###
         self.k_blur = QSlider(QtCore.Qt.Horizontal)
@@ -257,7 +293,6 @@ class ContourApp(QWidget):
         ### Approximate polygons ###
         self.use_approxPolys = QCheckBox("Use approximate polygons")
         self.grid_layout.addWidget(self.use_approxPolys, 14, 9, 1, 1)
-
         self.epsilon = QSlider(QtCore.Qt.Horizontal)
         self.epsilon.setRange(1, 50)
         self.epsilon.setValue(3)
@@ -293,11 +328,14 @@ class ContourApp(QWidget):
         self.k_foreground.valueChanged.connect(self.update_text)
         self.contour_thickness.valueChanged.connect(self.update_text)
         self.epsilon.valueChanged.connect(self.update_text)
+        
         # Line edits -> plots
         self.Amin.returnPressed.connect(self.update_plot)
         self.setAmin.clicked.connect(self.update_plot)
         self.Amax.returnPressed.connect(self.update_plot)
         self.setAmax.clicked.connect(self.update_plot)
+        
+        ### Misc. buttons ###
         # Generator push button
         self.CLIgenerator.clicked.connect(self.on_CLIgenerator_clicked)
         self.CLIgenerator.clicked.connect(self.copy_CLI)
@@ -308,8 +346,73 @@ class ContourApp(QWidget):
         # Color picker button
         self.contour_colorPicker.clicked.connect(self.update_contour_color)
         self.highlight_colorPicker.clicked.connect(self.update_highlight_color)
-
+        # Connect photo click and rubberband
+        self.viewer.photoClicked.connect(self.photoClicked)
+        self.viewer.rectChanged.connect(self.rectChange)
         self.update_plot()
+
+    def photoClicked(self, pos):
+        if self.select_contours.isChecked():
+            self.click_x, self.click_y = (pos.x(), pos.y())
+
+            if self.viewer.button == 1: # Click addition
+                for c in self.large_contours:
+                    if cv2.pointPolygonTest(contour=c, pt=(self.click_x, self.click_y), measureDist=False) == 1.0:
+                        self.contour_DF = self.contour_DF.append({
+                            "uuid4": uuid.uuid4().hex, 
+                            "contour": c, 
+                            "C": self.C.value(), 
+                            "kBlur": self.k_blur.value(),
+                            "blocksize": self.blocksize.value(), 
+                            "kDilate": self.k_dilate.value(), 
+                            "kGradient": self.k_gradient.value(), 
+                            "kForeground": self.k_foreground.value()}, ignore_index=True)
+                        break
+
+            elif self.viewer.button == 2: # Click subtraction
+                if len(self.contour_DF) > 0:
+                    for i, row in self.contour_DF.iterrows():
+                        if cv2.pointPolygonTest(contour=row["contour"], pt=(self.click_x, self.click_y), measureDist=False) == 1.0:
+                            self.contour_DF = self.contour_DF.drop(index=i, axis=0)
+                            self.contour_DF = self.contour_DF.reset_index(drop=True)
+                            break            
+            else: return
+            
+            self.update_plot()
+
+    def rectChange(self, pos):
+        if self.viewer._photo.isUnderMouse() and self.select_contours.isChecked():
+            xi, yi, xf, yf = (self.click_x, self.click_y, pos.x(), pos.y())
+            w,h = (abs(xf-xi), abs(yf-yi))
+            try:
+                if (w*h) <= self.Amin:
+                    return
+            except TypeError:
+                if (w*h) <= 4:
+                    return
+
+            if self.viewer.button == 1: # Rubberband addition
+                selected = RectangleOverlapTest(image=self.cv2_image, contours=self.large_contours,
+                                                x=min(xi, xf), y=min(yi, yf), width=w, height=h)
+                for c in selected:
+                    self.contour_DF = self.contour_DF.append({
+                            "uuid4": uuid.uuid4().hex, 
+                            "contour": c, 
+                            "C": self.C.value(), 
+                            "kBlur": self.k_blur.value(),
+                            "blocksize": self.blocksize.value(), 
+                            "kDilate": self.k_dilate.value(), 
+                            "kGradient": self.k_gradient.value(), 
+                            "kForeground": self.k_foreground.value()}, ignore_index=True)
+
+            elif self.viewer.button == 2: # Rubberband subtraction
+                to_remove = RectangleOverlapTest(image=self.cv2_image, contours=self.contour_DF["contour"].values,
+                                                        x=min(xi, xf), y=min(yi, yf), width=w, height=h)
+                self.contour_DF = self.contour_DF[~self.contour_DF["contour"].isin(to_remove)]
+                self.contour_DF = self.contour_DF.reset_index(drop=True)
+            else: return
+            
+            self.update_plot()
 
     def selectContoursChecked(self):
         if self.select_contours.isChecked():
@@ -321,69 +424,44 @@ class ContourApp(QWidget):
             for slider in self.sliders:
                 slider.setEnabled(True)
 
-    def mousePressEvent(self, event):
-        if self.viewer._photo.isUnderMouse():
-            self.origin = self.viewer.mapToScene(event.pos()).toPoint()
-            self.rubberband.setGeometry(QtCore.QRect(self.origin, QtCore.QSize()))
-            self.rubberband.show()
+    def resizeEvent(self, event):
+        self.update_plot()
 
-            self.click_x = self.viewer.mapToScene(event.pos()).toPoint().x()
-            self.click_y = self.viewer.mapToScene(event.pos()).toPoint().y()
-            print(self.viewer.width(), self.viewer.height())
-            print("Viewer: {}, {} ".format(self.click_x, self.click_y))
-            print("App: {}, {}".format(event.pos().x(), event.pos().y()))
+    def update_plot(self):
+        # Clear image
+        QPixmapCache.clear()
 
-            if self.select_contours.isChecked():
-                # Remove contours with right click
-                if event.button() == QtCore.Qt.RightButton:
-                    if len(self.highlighted) > 0:
-                        for i, h in enumerate(self.highlighted):
-                            if cv2.pointPolygonTest(contour=h, pt=(self.click_x, self.click_y), measureDist=False) == 1.0:
-                                self.highlighted.pop(i)
-                                break
-                # Add contour with left click
-                if event.button() == QtCore.Qt.LeftButton:
-                    for c in self.large_contours:
-                        if cv2.pointPolygonTest(contour=c, pt=(self.click_x, self.click_y), measureDist=False) == 1.0:
-                            self.highlighted.append(c)
-                            break
-                self.update_plot()
+        # If actively tuning contours...
+        self.cv2_image = cv2.imread(self.denoised_path.as_posix())
+        if not self.select_contours.isChecked():
+            self.contours = mcf(image=self.cv2_image,
+                                k_blur=2 * self.k_blur.value() - 1,
+                                C=self.C.value(),
+                                blocksize=2 * self.blocksize.value() - 1,
+                                k_laplacian=2 * self.k_laplacian.value() - 1,
+                                k_dilate=2 * self.k_dilate.value() - 1,
+                                k_gradient=2 * self.k_gradient.value() - 1,
+                                k_foreground=2 * self.k_foreground.value() - 1, skip_flood=True)
+            # Set min/max contour size
+            try: Amin = int(self.Amin.text())
+            except ValueError: Amin = int(1)
+            try: Amax = int(self.Amax.text())
+            except ValueError: Amax = int(self.cv2_image.shape[0]* self.cv2_image.shape[1])
+            # Refine contours
+            self.large_contours = contour_size_selection(self.contours, Amin=Amin, Amax=Amax)
+            if self.use_approxPolys.isChecked():
+                self.large_contours = [cv2.approxPolyDP(curve=c, epsilon=self.epsilon.value(), closed=True) for c in self.large_contours]
+            if self.use_convexHulls.isChecked():
+                self.large_contours = [cv2.convexHull(c) for c in self.large_contours]
 
-    def mouseMoveEvent(self, event):
-        if self.rubberband.isVisible():
-            self.rubberband.setGeometry(QtCore.QRect(self.origin, self.viewer.mapToScene(event.pos()).toPoint()).normalized() & self.qimage.rect())
+        cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=self.contour_thickness.value())
+        if len(self.contour_DF) > 0:
+            cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=self.contour_thickness.value())
 
-    def mouseReleaseEvent(self, event):
-        self.release = self.viewer.mapToScene(event.pos()).toPoint()
-        self.release_x = self.viewer.mapToScene(event.pos()).toPoint().x()
-        self.release_y = self.viewer.mapToScene(event.pos()).toPoint().y()
-
-        if self.rubberband.isVisible():
-            self.rubberband.hide()
-        if self.select_contours.isChecked():
-            width = abs(self.release_x-self.click_x)
-            height = abs(self.release_y-self.click_y)
-            if self.origin != self.release:
-                if event.button() == QtCore.Qt.LeftButton:
-                    selected = RectangleOverlapTest(image=self.cv2_image, contours=self.large_contours,
-                                                    x=min(self.click_x, self.release_x),
-                                                    y=min(self.click_y, self.release_y),
-                                                    width=width, height=height)
-                    new_highlighted = ContourOverlapTest(self.cv2_image, selected, self.highlighted, return_overlapping=False)
-                    self.highlighted += new_highlighted
-
-                if event.button() == QtCore.Qt.RightButton:
-                    self.highlighted = RectangleOverlapTest(image=self.cv2_image, contours=self.highlighted,
-                                                            x=min(self.click_x, self.release_x),
-                                                            y=min(self.click_y, self.release_y),
-                                                            width=width, height=height, REMOVE=True)
-                self.update_plot()
-
-    def copy_CLI(self):
-        cb = QApplication.clipboard()
-        cb.clear(mode=cb.Clipboard)
-        cb.setText(self.box.toPlainText(), mode=cb.Clipboard)
-        pyperclip.copy(self.box.toPlainText())
+        # Convert to QImage
+        self.pixmap = cv2pixmap(self.cv2_image)
+        self.viewer.setPhoto(self.pixmap)
+        self.viewer.updateView()
 
     def update_contour_color(self):
         self.contour_color = QColorDialog.getColor().getRgb()
@@ -420,6 +498,12 @@ class ContourApp(QWidget):
                 2 * self.k_foreground.value() - 1,
                 Amin, Amax))
 
+    def copy_CLI(self):
+        cb = QApplication.clipboard()
+        cb.clear(mode=cb.Clipboard)
+        cb.setText(self.box.toPlainText(), mode=cb.Clipboard)
+        pyperclip.copy(self.box.toPlainText())
+
     def on_reset_clicked(self):
         self.k_blur.setValue(5)
         self.C.setValue(3)
@@ -432,50 +516,12 @@ class ContourApp(QWidget):
         self.Amin.clear()
         self.Amax.clear()
 
-    def resizeEvent(self, event):
-        self.update_plot()
-
-    def update_plot(self):
-        QPixmapCache.clear()
-        # Get contours
-        self.cv2_image = cv2.imread(self.image_path)
-        if not self.select_contours.isChecked():
-            self.contours = mcf(image=self.cv2_image,
-                                k_blur=2 * self.k_blur.value() - 1,
-                                C=self.C.value(),
-                                blocksize=2 * self.blocksize.value() - 1,
-                                k_laplacian=2 * self.k_laplacian.value() - 1,
-                                k_dilate=2 * self.k_dilate.value() - 1,
-                                k_gradient=2 * self.k_gradient.value() - 1,
-                                k_foreground=2 * self.k_foreground.value() - 1, skip_flood=True)
-            # Set min/max contour size
-            try: Amin = int(self.Amin.text())
-            except ValueError: Amin = int(1)
-            try: Amax = int(self.Amax.text())
-            except ValueError: Amax = int(self.__originalH__ * self.__originalW__)
-            # Refine contours
-            self.large_contours = contour_size_selection(self.contours, Amin=Amin, Amax=Amax)
-            if self.use_approxPolys.isChecked():
-                self.large_contours = [cv2.approxPolyDP(curve=c, epsilon=self.epsilon.value(), closed=True) for c in self.large_contours]
-            if self.use_convexHulls.isChecked():
-                self.large_contours = [cv2.convexHull(c) for c in self.large_contours]
-
-        cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=self.contour_thickness.value())
-        if len(self.highlighted) > 0:
-            cv2.drawContours(self.cv2_image, contours=self.highlighted, contourIdx=-1, color=self.highlight_color, thickness=self.contour_thickness.value())
-        cv2.circle(self.cv2_image, (self.click_x, self.click_y), 10, (0, 0, 255), -1)
-
-
-        # Convert to QImage
-        self.np_image = cv2.cvtColor(self.cv2_image, cv2.COLOR_BGR2RGB)
-        self.qimage = QImage(self.np_image, self.np_image.shape[1], self.np_image.shape[0], self.bytesPerLine, QImage.Format_RGB888)
-        self.pixmap = QPixmap(self.qimage)
-        self.viewer.setPhoto(self.pixmap)
-
-class PhotoViewer(QtWidgets.QGraphicsView):
+class GraphicsView(QtWidgets.QGraphicsView):
+    photoClicked = QtCore.pyqtSignal(QtCore.QPoint)
+    rectChanged = QtCore.pyqtSignal(QtCore.QPoint)
 
     def __init__(self, parent):
-        super(PhotoViewer, self).__init__(parent)
+        super().__init__(parent)    
         self._zoom = 0
         self.factor = 1.0
         self._empty = True
@@ -488,25 +534,22 @@ class PhotoViewer(QtWidgets.QGraphicsView):
         self.setBackgroundBrush(QtGui.QBrush(QtGui.QColor(30, 30, 30)))
         self.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.setCursor(QtCore.Qt.CrossCursor)
+        self.button = None
 
-        self.click_x = 0
-        self.click_y = 0
+        # Set up rubberband selection
+        self.rubberband = QRubberBand(QRubberBand.Rectangle, self)
+        self.setMouseTracking(True)
+        self.origin = QtCore.QPoint()
+        self.changeRubberBand = False
 
-    def hasPhoto(self):
-        return not self._empty
+    def updateView(self):
+        if self._zoom <= 1.0:
+            scene = self.scene()
+            r = scene.sceneRect()
+            self.fitInView(r, QtCore.Qt.KeepAspectRatio)
 
-    def fitInView(self, scale=True):
-        rect = QtCore.QRectF(self._photo.pixmap().rect())
-        if not rect.isNull():
-            self.setSceneRect(rect)
-            if self.hasPhoto():
-                unity = self.transform().mapRect(QtCore.QRectF(0, 0, 1, 1))
-                self.scale(1 / unity.width(), 1 / unity.height())
-                viewrect = self.viewport().rect()
-                scenerect = self.transform().mapRect(rect)
-                self.factor = min(viewrect.width() / scenerect.width(),
-                                 viewrect.height() / scenerect.height())
-                self.scale(self.factor, self.factor)
+    def resizeEvent(self, event):
+        self.updateView()
 
     def setPhoto(self, pixmap=None):
         if pixmap and not pixmap.isNull():
@@ -529,20 +572,45 @@ class PhotoViewer(QtWidgets.QGraphicsView):
         elif event.key() == QtCore.Qt.Key_Space and event.modifiers() == QtCore.Qt.ControlModifier:
             self.factor = 1.0
             self._zoom = 0
-            self.fitInView()
+            self.updateView()
             zoom_key = True
         if zoom_key:
             if self._zoom > 0:
                 self.scale(self.factor, self.factor)
             elif self._zoom == 0:
-                self.fitInView()
+                self.updateView()
+
+    def mousePressEvent(self, event):
+        self.button = event.button()
+        if self._photo.isUnderMouse():
+            self.origin = event.pos()
+            self.rubberband.setGeometry(QtCore.QRect(self.origin, QtCore.QSize()))
+            self.changeRubberBand = True
+            self.photoClicked.emit(self.mapToScene(event.pos()).toPoint())
+        super(GraphicsView, self).mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self.changeRubberBand:
+            self.rubberband.show()
+            self.rubberband.setGeometry(QtCore.QRect(self.origin, event.pos()).normalized())
+            QGraphicsView.mouseMoveEvent(self, event)
+        super(GraphicsView, self).mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() in [QtCore.Qt.LeftButton, QtCore.Qt.RightButton]:
+            self.changeRubberBand = False
+            if self.rubberband.isVisible():
+                self.rectChanged.emit(self.mapToScene(event.pos()).toPoint())
+                self.rubberband.hide()
+
+        super(GraphicsView, self).mouseReleaseEvent(event)
 
 if __name__ == '__main__':
     print("""
    __  ___   _          _               
   /  |/  /  (_)  ___   (_)              
  / /|_/ /  / /  / _ \ / /               
-/_/__/_/  /_/  /_//_//_/                
+/_/__/_/  /_/  /_//_//_/                 
  / ___/ ___   ___  / /_ ___  __ __  ____
 / /__  / _ \ / _ \/ __// _ \/ // / / __/
 \___/__\___//_//_/\__/ \___/\_,_/ /_/   
