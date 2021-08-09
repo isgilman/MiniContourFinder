@@ -138,18 +138,13 @@ class ContourApp(QWidget):
         self.viewer.updateView()
         self.viewer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.viewer.setAlignment(QtCore.Qt.AlignTop)
-
-        ### Add image and contours ###
-        self.image_path = Path(sys.argv[1])
-        self.denoised_path = Path("{}/{}.denoise{}".format(self.image_path.parent.as_posix(), self.image_path.stem, self.image_path.suffix))
-        if self.denoised_path.exists():
-            print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
-            self.cv2_image = cv2.imread(self.denoised_path.as_posix())
-        else:
-            print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-            self.cv2_image = cv2.fastNlMeansDenoisingColored(cv2.imread(self.image_path.as_posix()), None, 10, 10, 7, 21)
-            cv2.imwrite(filename=self.denoised_path.as_posix(), img=self.cv2_image)
-            print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
+        self.image_path = sys.argv[1]
+        """Denoise"""
+        print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        self.cv2_image = cv2.cvtColor(cv2.imread(self.image_path), cv2.COLOR_BGR2RGB)
+        self.cv2_image = cv2.fastNlMeansDenoisingColored(self.cv2_image.copy(), None, 10, 10, 7, 21)
+        print("[{}] Finished denoising".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        self.__originalH__, self.__originalW__, self.__originalD__ = self.cv2_image.shape
 
         # Get contours
         self.contours = mcf(image=self.cv2_image)
@@ -187,7 +182,7 @@ class ContourApp(QWidget):
         self.grid_layout.addWidget(self.C, 1, 8, 1, 2)
 
         self.blocksize = QSlider(QtCore.Qt.Horizontal)
-        self.blocksize.setRange(2, 100)
+        self.blocksize.setRange(2, 200)
         self.blocksize.setValue(8)
         self.blocksize.setTickInterval(1)
         self.blocksize.setTickPosition(QSlider.TicksBelow)
