@@ -3,34 +3,19 @@
 
 # core
 from functools import partial
-import sys, os, re, argparse, platform, subprocess, pickle, cProfile
+import sys, os, argparse
+from matplotlib.pyplot import new_figure_manager
 import numpy as np
 from datetime import datetime
-import pandas as pd
-from scipy import spatial
-from tqdm import tqdm
 from multiprocessing import Pool, set_start_method
-
-# plotting
-import matplotlib.pyplot as plt
 # image recognition
 import cv2
-import imutils
-import pytesseract
-from pytesseract import image_to_string
-import skimage.measure
-from skimage import io, data
-from skimage.util import img_as_float, img_as_ubyte
 from pathlib import Path
 # Custom utilities
 from utilities import *
+from imagetools import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-def the_analysis(window):
-    return cv2.GaussianBlur(src=window, ksize=(9, 9), sigmaX=2,)
-
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 if __name__ == "__main__":
     set_start_method('spawn')
@@ -48,6 +33,7 @@ if __name__ == "__main__":
          / _/   / /  / _ \/ _  / / -_) / __/    
         /_/    /_/  /_//_/\_,_/  \__/ /_/                                              
         """)
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str,
                     help="Filepath to query image")
@@ -110,11 +96,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.cpus == "AUTO":
-        cpus = get_cpus_avail()
-    else:
-        cpus = args.cpus
-
     kwargs = {}
     kwargs['k_blur'] = args.k_blur
     kwargs['C'] = args.C
@@ -124,7 +105,7 @@ if __name__ == "__main__":
     kwargs['k_gradient'] = args.k_gradient
     kwargs['k_foreground'] = args.k_foreground
 
-    h, w, c = cv2.imread(args.input).shape
+    h, w, _ = cv2.imread(args.input).shape
     if not args.winW:
         winW = round((w / 5) / 100) * 100
     else:
@@ -137,14 +118,18 @@ if __name__ == "__main__":
         stepsize = int(min([winH, winW])/2)
     else:
         stepsize = args.stepsize
-
     if not args.prefix:
         prefix = Path(args.input).stem
     else:
         prefix = args.prefix
 
-    print("[{}] MCF command:\n\t python MCF-parallel.py --prefix {} --sliding-window {} --stepsize {} --winW {} --winH {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d} --cpus {}".format(
-        datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, args.sliding_window, stepsize, winW, winH, args.neighborhood, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, int(args.Amin), int(args.Amax), args.cpus))
+    print("[{}] MCF command:\n\t python MCF-parallel.py --prefix {} --stepsize {} --winW {} --winH {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d} --cpus {}".format(
+        datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, stepsize, winW, winH, args.neighborhood, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, int(args.Amin), int(args.Amax), args.cpus))
+    if args.cpus == "AUTO":
+        cpus = get_cpus_avail()
+    else:
+        cpus = args.cpus
+    print("[{}] Using {} cpus".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), cpus))
 
     if args.input.startswith("~/"):
         input_path = Path(Path.home() / args.input[2:])
@@ -158,7 +143,7 @@ if __name__ == "__main__":
     print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), input_path.absolute()))
     print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir_path.absolute()))
 
-    suffixes = ["summary.csv", "contour_data.csv", "contour_data.pkl", "tif", "noindex.tif"]
+    suffixes = ["contour_summary_stats.csv", "contours.pkl", "tif", "noindex.tif"]
     conflicts = [output_dir_path / "{}.{}".format(prefix, suffix) for suffix in suffixes]
 
     if any([c.exists() for c in conflicts]):
@@ -182,23 +167,19 @@ if __name__ == "__main__":
 
     """Denoise"""
     print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    image = cv2.fastNlMeansDenoisingColored(image.copy(), None, 10, 10, 7, 21)
-    border_contour='DETECT'
-    if border_contour != 'DETECT':
-        if args.debug: print("[{}] Border contour given; skipping border detection".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    else:
-        print("[{}] Getting image border...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        border_contour = mcf(image=image, extract_border=True, **kwargs)
+    denoise = cv2.fastNlMeansDenoisingColored(image.copy(), None, 10, 10, 7, 21)
+    print("[{}] Getting image border...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+    border_contour = mcf(image=denoise, extract_border=True, **kwargs)
 
-    clone = image.copy()
+    # mask input image (leaves only the area inside the border contour)
+    clone = denoise.copy()
     blank = np.zeros(clone.shape[0:2], dtype=np.uint8)
     border_mask = cv2.drawContours(blank.copy(), border_contour, 0, (255), -1)
-    # mask input image (leaves only the area inside the border contour)
     cutout = cv2.bitwise_and(clone, clone, mask=border_mask)
 
-    n_windows = len(list(sliding_window(image=cutout.copy(), stepSize=stepsize, windowSize=(winW, winH))))
-    windows = sliding_window(image=cutout.copy(), stepSize=stepsize, windowSize=(winW, winH))
-
+    # Break image into windows
+    windows = list(sliding_window(image=cutout.copy(), stepSize=stepsize, windowSize=(winW, winH)))
+    windows = [w for w in windows if w[2].sum() > 0]
     print("[{}] Finding contours...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     with Pool(processes=cpus) as pool:
         contours = pool.map(partial(parallel_mcf, **kwargs), windows)
@@ -208,7 +189,7 @@ if __name__ == "__main__":
     print("[{}] Found {} contours in all windows".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), len(contours)))
     
     print("[{}] Removing redundant contours...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    contours = remove_redundant_contours(contours)
+    contours = remove_redundant_contours(contours, neighborhood=args.neighborhood)
     print("[{}] Found {} nonredundant contours".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), len(contours)))
 
     # Export contours
@@ -218,17 +199,8 @@ if __name__ == "__main__":
     export_contour_data(image=image, contours=contours, conversion_factor=None,
                         units=None, prefix="{}.ALL".format(prefix), output_dir=output_dir_path)
 
-    print("[{}] Contour data exported to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    print("\t{}".format(Path(output_dir_path) / "{}.summary.csv".format(prefix)))
-    print("\t{}".format(Path(output_dir_path) / "{}.contour_data.csv".format(prefix)))
-    print("\t{}".format(Path(output_dir_path) / "{}.contour_data.pkl".format(prefix)))
-
     print("[{}] Plotting...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     render_contour_plots(image=image, border_contour=border_contour, contours=contours, prefix=prefix, dpi=args.dpi, output_dir=output_dir_path)
-    print("[{}] Contour plots saved to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    print("\t{}".format(Path(output_dir_path) / "{}.tif".format(prefix)))
-    print("\t{}".format(Path(output_dir_path) / "{}.noindex.tif".format(prefix)))
-    print("[{}] Wrote {} nonredundant contours".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), len(contours)))
 
     end = datetime.now()
     print("[{}] Time elapsed: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), end-start))
