@@ -15,6 +15,7 @@ import matplotlib
 if sys.platform == 'darwin':
     matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 # image related
 import cv2
 from pytesseract import image_to_string
@@ -675,3 +676,70 @@ def read_json_contours(file_path: Union[str, PosixPath]) -> list:
     json_load = json.load(codecs.open(file_path, 'r', encoding="utf-8"))
 
     return [np.array(c, dtype='int32') for c in json_load]
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def contourScatter(x, y, contours, color, linewidth=1, alpha=1.0, ax=None, zoom=1.0):
+    """A modified scatter plot that allows plotting a set of points that
+    define a line as a marker. Written by Stackoverflow user Joe Kington 
+    and modified for contour use by HansHirse.
+    https://stackoverflow.com/a/22570069/11089932
+
+    Parameters
+    ----------
+    x <iterable> : x-positions
+    y <iterable> : y-positions
+    contours <iterable of numpy.ndarray> : Contours to plot as markers
+    color <str, tuple, or iterable> : Matplotlib color string or color in RGB or RGBA 
+        format, or an iterable of those types
+    linewidth <int> : Contour line width. If -1, will fill shape with <color>
+    alpha <float> : Marker transparency
+    ax <matplotlib.axes> : Axes to use
+    zoom <float> : Marker scale
+    
+    Returns
+    -------
+    artists <list> : List of plot attributes"""
+
+    if ax is None:
+        ax = plt.gca()
+        
+    x, y = np.atleast_1d(x, y)
+    
+    if type(color)==str or np.shape(color) in [(3,), (4,)]:
+        color = np.reshape(np.tile(rgba2bgra(color=color), len(x)), (len(x),4))
+    else:
+        if len(color)==len(x):
+            color = [rgba2bgra(c) for c in color]
+        else:
+            print("Length of color does not match number of contours.")
+        color = [rgba2bgra(c) for c in color]
+
+    artists = []
+    for x0, y0, cont, col in zip(x, y, contours, color):
+        cx, cy, cw, ch = cv2.boundingRect(cont)
+        img = np.zeros((ch + 11, cw + 11, 4), np.uint8)
+        img = cv2.drawContours(img, [cont], -1, col, linewidth, offset=(-cx+5, -cy+5))
+        img = OffsetImage(img, zoom=zoom, alpha=alpha)
+        ab = AnnotationBbox(img, (x0, y0), xycoords='data', frameon=False)
+        artists.append(ax.add_artist(ab))
+    ax.update_datalim(np.column_stack([x, y]))
+    ax.autoscale()
+    
+    return artists
+
+def rgba2bgra(color):
+    if type(color)==str: # String to BGRA255
+        try:
+            color = np.array(matplotlib.colors.to_rgba(color))[[2,1,0,3]]*255
+        except ValueError:
+            print("Invalid matplotlib color")
+            return 
+    elif np.shape(color) == (3,): #RGB to RGBA
+        color = np.array(color)[::-1]*255
+        color = np.append(color,255)
+    elif np.shape(color) == (4,):
+        color = np.array(color)[[2,1,0,3]]*255
+    else:
+        print("Invalid matplotlib color")
+        return
+    return color
