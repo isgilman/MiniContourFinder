@@ -423,8 +423,10 @@ def process_image(image_path, neighborhood=10, prefix=None, Amin=50, Amax=10e6,
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def detect_scalebar(image, rho=1, theta=float(np.pi/180), min_votes=15, min_line_length=100,
-                 max_line_gap=0, threshold1=50, threshold2=150, color=(255,0,0), largest=True):
+                 max_line_gap=0, threshold1=50, threshold2=150, largest=True):
     """Detects line-like (i.e. a straight bar instead of a ruler) scalebars.
+    Written by StackOverflow user SHEN and amended by Ian Gilman
+    https://stackoverflow.com/a/45560545/6317380
 
     Parameters
     ----------
@@ -727,6 +729,7 @@ def contourScatter(x, y, contours, color, linewidth=1, alpha=1.0, ax=None, zoom=
     
     return artists
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def rgba2bgra(color):
     if type(color)==str: # String to BGRA255
         try:
