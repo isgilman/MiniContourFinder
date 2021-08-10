@@ -251,10 +251,22 @@ class ContourApp(QWidget):
         self.grid_layout.addWidget(self.Amax, 8, 8, 1, 2)
         self.grid_layout.addWidget(self.setAmax, 8, 10)
 
-        ### Generate parameters for CLI ###
+        ### Scale bar info
+        self.scalePixels = QLineEdit()
+        self.scalePixels.setPlaceholderText("Pixels")
+        self.grid_layout.addWidget(self.scalePixels, 9, 8, 1, 1)
+
+        self.scaleLength = QLineEdit()
+        self.scaleLength.setPlaceholderText("Length")
+        self.grid_layout.addWidget(self.scaleLength, 9, 9, 1, 1)
+        
+        self.setScale = QPushButton("Set scale")
+        self.grid_layout.addWidget(self.setScale, 9,10)
+
+        # ### Generate parameters for CLI ###
         self.CLIgenerator = QPushButton()
         self.CLIgenerator.setText("Copy CLI parameters to clipboard")
-        self.grid_layout.addWidget(self.CLIgenerator, 9, 8, 1, 3)
+        self.grid_layout.addWidget(self.CLIgenerator, 10, 8, 1, 3)
 
         ### Text box ###
         self.box = QPlainTextEdit()
@@ -263,16 +275,16 @@ class ContourApp(QWidget):
         ### Reset parameters ###
         self.resetParams = QPushButton()
         self.resetParams.setText("Reset parameters")
-        self.grid_layout.addWidget(self.resetParams, 10, 8, 1, 3)
+        self.grid_layout.addWidget(self.resetParams, 11, 8, 1, 3)
 
         ### Color picker ###
         self.contour_colorPicker = QPushButton()
         self.contour_colorPicker.setText("Contour color")
-        self.grid_layout.addWidget(self.contour_colorPicker, 11, 8, 1, 3)
+        self.grid_layout.addWidget(self.contour_colorPicker, 12, 8, 1, 3)
 
         self.highlight_colorPicker = QPushButton()
         self.highlight_colorPicker.setText("Highlight color")
-        self.grid_layout.addWidget(self.highlight_colorPicker, 12, 8, 1, 3)
+        self.grid_layout.addWidget(self.highlight_colorPicker, 13, 8, 1, 3)
 
         ### Contour thickness ###
         self.contour_thickness = QSlider(QtCore.Qt.Horizontal)
