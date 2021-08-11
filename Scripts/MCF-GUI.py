@@ -138,7 +138,7 @@ class ContourApp(QWidget):
         self.viewer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.viewer.setAlignment(QtCore.Qt.AlignTop)
 
-       ### Add image and contours ###
+        ### Add image and contours ###
         self.image_path = Path(sys.argv[1])
         self.denoised_path = Path("{}/{}.denoise{}".format(self.image_path.parent.as_posix(), self.image_path.stem, self.image_path.suffix))
         if self.denoised_path.exists():
