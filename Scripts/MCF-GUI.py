@@ -11,7 +11,7 @@ np.warnings.filterwarnings('error', category=np.VisibleDeprecationWarning)
 # PyQt5
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import *
-from PyQt5.QtGui import QPixmapCache
+from PyQt5.QtGui import QPainter, QPixmapCache
 # Plotting
 import matplotlib
 if sys.platform == 'darwin':
@@ -76,7 +76,7 @@ class MainWindow(QMainWindow):
             else:
                 export_data = self.contour_app.contour_DF
 
-            export_contour_data(image=sys.argv[1], contourDF=export_data, conversion_factor=self.contour_app.lengthPerPixel, units=self.contour_app.scaleBarUnits,
+            export_contour_data(image=sys.argv[1], contourDF=export_data, conversion_factor=self.contour_app.unitsPerPixel, units=self.contour_app.scaleBarUnits,
                                 output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem)
             render_contour_plots(image=sys.argv[1], contours=export_data["contour"].values, border_contour=None, contour_thickness=self.contour_app.contour_thickness.value(),
                                 output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem, color=self.contour_app.highlight_color)
@@ -252,37 +252,39 @@ class ContourApp(QWidget):
 
         ### Scale bar info
         self.scaleBar = None
-        self.scaleBarLength = None
-        self.scaleBarUnits = None
-        self.lengthPerPixel = None
+        self.scaleBarPixelLength = None
+        self.scaleBarUnitLength = None
+        self.unitsPerPixel = None
 
-        self.scalePixels = QLineEdit()
-        self.scalePixels.setPlaceholderText("Pixels")
-        self.grid_layout.addWidget(self.scalePixels, 9, 8, 1, 2)
-
+        self.pixelLengthField = QLineEdit()
+        self.pixelLengthField.setPlaceholderText("Length in pixels")
+        self.grid_layout.addWidget(self.pixelLengthField, 9, 8, 1, 2)
         self.pixelLabel = QLabel("Pixels")
         self.grid_layout.addWidget(self.pixelLabel, 9, 10, 1, 1)
 
-        self.scaleLength = QLineEdit()
-        self.scaleLength.setPlaceholderText("Length")
-        self.grid_layout.addWidget(self.scaleLength, 10, 8, 1, 2)
+        self.unitLengthField = QLineEdit()
+        self.unitLengthField.setPlaceholderText("Length in units")
+        self.grid_layout.addWidget(self.unitLengthField, 10, 8, 1, 2)
+        self.unitsLabel = QLabel("Length")
+        self.grid_layout.addWidget(self.unitsLabel, 10, 10, 1, 1)
 
-        self.lengthLabel = QLabel("Length")
-        self.grid_layout.addWidget(self.lengthLabel, 10, 10, 1, 1)
+        self.setScaleButton = QPushButton("Set scale")
+        self.grid_layout.addWidget(self.setScaleButton, 11, 8, 1, 1)
 
-        self.setScale = QPushButton("Set scale")
-        self.grid_layout.addWidget(self.setScale, 11, 8, 1, 1)
+        self.detectScaleButton = QPushButton("Detect scale")
+        self.grid_layout.addWidget(self.detectScaleButton, 11, 9, 1, 1)
 
-        self.detectScale = QPushButton("Detect scale")
-        self.grid_layout.addWidget(self.detectScale, 11, 9, 1, 1)
+        self.clearScaleButton = QPushButton("Clear scale")
+        self.grid_layout.addWidget(self.clearScaleButton, 12, 8, 1, 1)
 
-        self.clearScaleInfo = QPushButton("Clear scale")
-        self.grid_layout.addWidget(self.clearScaleInfo, 11, 10, 1, 1)
+        self.drawing = False
+        self.drawScaleButton = QPushButton("Draw scale bar")
+        self.grid_layout.addWidget(self.drawScaleButton, 12, 9, 1, 1)
 
         ### Generate parameters for CLI ###
         self.CLIgenerator = QPushButton()
-        self.CLIgenerator.setText("Copy CLI parameters to clipboard")
-        self.grid_layout.addWidget(self.CLIgenerator, 12, 8, 1, 2)
+        self.CLIgenerator.setText("Copy CLI parameters")
+        self.grid_layout.addWidget(self.CLIgenerator, 11, 10, 1, 1)
 
         ### Text box ###
         self.box = QPlainTextEdit()
@@ -364,8 +366,11 @@ class ContourApp(QWidget):
         self.setAmax.clicked.connect(self.update_plot)
 
         # Scale bars
-        self.detectScale.clicked.connect(self.detectClicked)
-        self.clearScaleInfo.clicked.connect(self.clearScale)
+        self.pixelLengthField.returnPressed.connect(self.setScale)
+        self.unitLengthField.returnPressed.connect(self.setScale)
+        self.detectScaleButton.clicked.connect(self.detectScale)
+        self.clearScaleButton.clicked.connect(self.clearScale)
+        self.drawScaleButton.clicked.connect(self.drawScaleBar)
         
         ### Misc. buttons ###
         # Generator push button
@@ -383,27 +388,48 @@ class ContourApp(QWidget):
         self.viewer.rectChanged.connect(self.rectChange)
         self.update_plot()
 
-    def detectClicked(self):
-        scaleBarInfo = get_scalebar_info(self.cv2_image)
-        print(scaleBarInfo)
-        if len(scaleBarInfo) == 2:
-            self.scaleBar, self.scaleBarLength = scaleBarInfo
-        elif len(scaleBarInfo) == 4:
-            self.scaleBar, self.scaleBarLength, self.lengthPerPixel, self.scaleBarUnits = scaleBarInfo
-            self.lengthLabel.setText("{}".format(self.scaleBarUnits))
+    def drawScaleBar(self):
+        if self.select_contours.isChecked():
+            print("Cannot draw scale bar while selecting contours")
+            return
+        else:
+            self.clearScale()
+            self.drawing = True
+            self.scaleBar = []
 
-        self.scalePixels.setText("{}".format(1))
-        self.scaleLength.setText("{}".format(self.lengthPerPixel))
-        print(self.scaleBar)
-        print(self.scaleBarLength)
+    def setScale(self):
+        try:
+            self.scaleBarPixelLength = eval(self.pixelLengthField)
+            self.scaleBarUnitLength = eval(self.unitLengthField)
+            self.unitsPerPixel = self.scaleBarUnitLength/self.scaleBarPixelLength
+            print("Conversion factor: {} units/pixel".format(self.unitsPerPixel))
+        except TypeError:
+            print("Both number of pixels and a length must be set to create a scaling factor")
+            return
+        except NameError:
+            print("Both the number of pixels and length must be numbers")
+            return
+
+    def detectScale(self):
+        scaleBarInfo = get_scalebar_info(self.cv2_image)
+        if len(scaleBarInfo) == 2:
+            self.scaleBar, self.scaleBarPixelLength = scaleBarInfo
+        elif len(scaleBarInfo) == 4:
+            self.scaleBar, self.scaleBarPixelLength, self.scaleBarUnitLength, self.scaleBarUnits = scaleBarInfo
+            self.unitsLabel.setText("{}".format(self.scaleBarUnits))
+
+        self.pixelLengthField.setText("{}".format(self.scaleBarPixelLength))
+        self.unitLengthField.setText("{}".format(self.scaleBarUnitLength))
         self.update_plot()
 
     def clearScale(self):
         self.scaleBar = None
+        self.scaleBarPixelLength = None
+        self.scaleBarUnitLength = None
         self.scaleBarUnits = None
-        self.scaleLength.setText("Length")
-        self.scalePixels.setText("Pixels")
-        self.lengthLabel.setText("Length")
+        self.pixelLengthField.setText("Length in pixels")
+        self.unitLengthField.setText("Length in units")
+        self.unitsLabel.setText("Units")
         self.update_plot()
 
     def photoClicked(self, pos):
@@ -432,8 +458,38 @@ class ContourApp(QWidget):
                             self.contour_DF = self.contour_DF.reset_index(drop=True)
                             break            
             else: return
-            
             self.update_plot()
+
+        elif self.drawing:
+            if len(self.scaleBar) == 0:
+                self.scaleBar.append(pos.x())
+                self.scaleBar.append(pos.y())
+                self.scaleBarPixelLength = None
+                self.update_plot()
+            elif len(self.scaleBar) == 2:
+                self.scaleBar.append(pos.x())
+                self.scaleBar.append(pos.y())
+                self.scaleBarPixelLength = np.sqrt((self.scaleBar[2]-self.scaleBar[0])**2+(self.scaleBar[3]-self.scaleBar[1])**2)
+                self.pixelLengthField.setText("{}".format(self.scaleBarPixelLength))
+                self.update_plot()
+
+                _, okPressed = QInputDialog.getDouble(self, "Length in units", "Length:", 1, 0)
+                if okPressed:
+                    self.scaleBarUnitLength = _
+                    _, okPressed = QInputDialog.getText(self, "Scale bar units", "Units:", QLineEdit.Normal, "\u03BC"+"m")
+                    self.unitLengthField.setText(str(self.scaleBarUnitLength))
+                    if okPressed and _!='':
+                        self.scaleBarUnits = _
+                        self.unitsLabel.setText(self.scaleBarUnits)
+                else:        
+                    self.unitLengthField.setText("Length in units")
+                    self.unitsLabel.setText("Units")
+                self.drawing = False
+            else:
+                self.clearScale()
+                self.drawing = False        
+        else:
+            return
 
     def rectChange(self, pos):
         if self.viewer._photo.isUnderMouse() and self.select_contours.isChecked():
@@ -485,7 +541,6 @@ class ContourApp(QWidget):
     def update_plot(self):
         # Clear image
         QPixmapCache.clear()
-
         # If actively tuning contours...
         self.cv2_image = cv2.imread(self.denoised_path.as_posix())
         if not self.select_contours.isChecked():
@@ -510,8 +565,16 @@ class ContourApp(QWidget):
                 self.large_contours = [cv2.convexHull(c) for c in self.large_contours]
 
         cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=self.contour_thickness.value())
-        if (self.scaleBar is not None) and (self.scaleBarLength > 0):
-            cv2.line(self.cv2_image, (self.scaleBar[0], self.scaleBar[1]), (self.scaleBar[2], self.scaleBar[3]), (0,255,0),5)
+        # Add scale bar
+        if self.scaleBar is not None:
+            if self.drawing:
+                cv2.circle(self.cv2_image, (self.scaleBar[0], self.scaleBar[1]), radius=5, color=(0,255,0), thickness=-1)
+                if len(self.scaleBar) == 4:
+                    cv2.circle(self.cv2_image, (self.scaleBar[2], self.scaleBar[3]), radius=5, color=(0,255,0), thickness=-1)
+                    cv2.line(self.cv2_image, (self.scaleBar[0], self.scaleBar[1]), (self.scaleBar[2], self.scaleBar[3]), (0,255,0),5)
+            else:
+                cv2.line(self.cv2_image, (self.scaleBar[0], self.scaleBar[1]), (self.scaleBar[2], self.scaleBar[3]), (0,255,0),5)
+
         if len(self.contour_DF) > 0:
             cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=self.contour_thickness.value())
 
