@@ -3,7 +3,6 @@
 
 # Core
 import sys, cv2, uuid
-from ast import literal_eval
 from datetime import datetime
 import pyperclip
 import pathlib as pl
