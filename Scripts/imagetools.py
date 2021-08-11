@@ -494,7 +494,6 @@ def read_units(scalebar, scalebar_img):
     pixel_area : <float>, The area of a single pixel in the new units
     converstion_units : <str>, The detected units"""
 
-    scalebar_pixels = np.sqrt((scalebar[2]-scalebar[0])**2+(scalebar[3]-scalebar[1])**2)
     scalebar_length, scalebar_units = image_to_string(image=scalebar_img.copy(), lang="eng").split()
 
     # Check for units in micrometers
@@ -505,10 +504,7 @@ def read_units(scalebar, scalebar_img):
 
     scalebar_length = float(scalebar_length)
 
-    lengthPerPixel = scalebar_length/scalebar_pixels
-    converstion_units = "{}".format(scalebar_units)
-
-    return lengthPerPixel, converstion_units
+    return scalebar_length, scalebar_units
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -529,7 +525,7 @@ def get_scalebar_info(image, plot=False, **kwargs):
     clone = image.copy()
     # Detect largest scalebar
     try:
-        line_image, scalebar, length = detect_scalebar(clone, **kwargs)
+        line_image, scalebar, length_in_pixels = detect_scalebar(clone, **kwargs)
     except TypeError:
         print("Could not detect scalebar.")
         return
@@ -546,19 +542,19 @@ def get_scalebar_info(image, plot=False, **kwargs):
             ymin = scalebar[1]
             ymax = scalebar[3]
             crop_scalebar = line_edges.copy()[max([0, ymin-pad]):min([height, ymax+pad]), max([0, xmin-pad]):min([width, xmax+pad])]
-            lengthPerPixel, units = read_units(scalebar=scalebar, scalebar_img=crop_scalebar)
+            length_in_units, scalebar_units = read_units(scalebar=scalebar, scalebar_img=crop_scalebar)
             if plot:
                 fig, ax = plt.subplots(figsize=(6,6))
                 ax.imshow(crop_scalebar)
                 plt.tight_layout()
 
-            return scalebar, length, lengthPerPixel, units
+            return scalebar, length_in_pixels, length_in_units, scalebar_units
 
         # If no units were found, expand search window.
         except ValueError:
             pad = pad*2
     print("Detected scalebar but could not read units.")
-    return scalebar, length
+    return scalebar, length_in_pixels
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def RectangleOverlapTest(image, contours, x, y, width, height, REMOVE=False):
     """Finds contours that overlap with a rectangle.
