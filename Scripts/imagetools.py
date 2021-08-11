@@ -275,12 +275,12 @@ def export_contour_data(contourDF:pd.DataFrame, prefix:str, image:np.ndarray, co
     ----------
     image : <np.ndarray> Image
     contourDF : <np.ndarray> Contours to export
-    conversion_factor : <float> Conversion factort to convert pixel area. Default=None
+    conversion_factor : <float> Conversion factort to convert pixel length. Default=None
     units : <str> Associated conversion factor units. Default=None
     prefix : <str> Prefix for output files (e.g. PREFIX.contour_data.pkl, PREFIX.contour_data.csv)
     output_dir : <str> Path to output directory. Default='./' """
     
-    contourDF["area"] = np.array(list(map(cv2.contourArea, contourDF["contour"].values)), dtype=object)
+    contourDF["area_pixels"] = np.array(list(map(cv2.contourArea, contourDF["contour"].values)), dtype=object)
     contourDF["moment_XY"] = [contour_xy(c) for c in contourDF["contour"].values]
     cRXY = np.array(list(map(cv2.minEnclosingCircle, contourDF["contour"].values)), dtype=object)
     contourDF["min_circle_xy"] = cRXY[:,0]
@@ -295,7 +295,7 @@ def export_contour_data(contourDF:pd.DataFrame, prefix:str, image:np.ndarray, co
     contourDF["equivalent_diameter"] = [np.sqrt(4*cv2.contourArea(c)/np.pi) for c in contourDF["contour"].values]
 
     if conversion_factor and units:
-        contourDF["area_{}".format(units)] = contourDF["area_pixels"]*conversion_factor
+        contourDF["area_{}^2".format(units)] = contourDF["area_pixels"]*(conversion_factor**2)
 
     if get_color:
         if type(image)==str:
@@ -308,7 +308,7 @@ def export_contour_data(contourDF:pd.DataFrame, prefix:str, image:np.ndarray, co
 
     print("[{}] Contour data exported to".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     print("\t{}".format(Path(output_dir) / "{}.contour_data.csv".format(prefix)))
-    # print("\t{}".format(Path(output_dir) / "{}.contours.json".format(prefix)))
+    print("\t{}".format(Path(output_dir) / "{}.contour_data.json".format(prefix)))
    
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def render_contour_plots(image, border_contour, contours, prefix, dpi=300, output_dir="./", color = (0, 255, 255), contour_thickness=3, imgFormat="pdf"):
@@ -505,14 +505,14 @@ def read_units(scalebar, scalebar_img):
 
     scalebar_length = float(scalebar_length)
 
-    pixel_area = (scalebar_length**2)/(scalebar_pixels**2)
-    converstion_units = "{}^2".format(scalebar_units)
+    lengthPerPixel = scalebar_length/scalebar_pixels
+    converstion_units = "{}".format(scalebar_units)
 
-    return pixel_area, converstion_units
+    return lengthPerPixel, converstion_units
 
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def get_scalebar_info(image, plot=False, debug=False, **kwargs):
+def get_scalebar_info(image, plot=False, **kwargs):
     """Detects and reads a scalebar.
 
     Parameters
@@ -546,19 +546,19 @@ def get_scalebar_info(image, plot=False, debug=False, **kwargs):
             ymin = scalebar[1]
             ymax = scalebar[3]
             crop_scalebar = line_edges.copy()[max([0, ymin-pad]):min([height, ymax+pad]), max([0, xmin-pad]):min([width, xmax+pad])]
-            conversion_factor, units = read_units(scalebar=scalebar, scalebar_img=crop_scalebar)
+            lengthPerPixel, units = read_units(scalebar=scalebar, scalebar_img=crop_scalebar)
             if plot:
                 fig, ax = plt.subplots(figsize=(6,6))
                 ax.imshow(crop_scalebar)
                 plt.tight_layout()
 
-            return conversion_factor, units
+            return scalebar, length, lengthPerPixel, units
 
         # If no units were found, expand search window.
         except ValueError:
             pad = pad*2
     print("Detected scalebar but could not read units.")
-
+    return scalebar, length
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def RectangleOverlapTest(image, contours, x, y, width, height, REMOVE=False):
     """Finds contours that overlap with a rectangle.
