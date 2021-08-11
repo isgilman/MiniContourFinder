@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
             else:
                 export_data = self.contour_app.contour_DF
 
-            export_contour_data(image=sys.argv[1], contourDF=export_data,
+            export_contour_data(image=sys.argv[1], contourDF=export_data, conversion_factor=self.contour_app.lengthPerPixel, units=self.contour_app.scaleBarUnits,
                                 output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem)
             render_contour_plots(image=sys.argv[1], contours=export_data["contour"].values, border_contour=None, contour_thickness=self.contour_app.contour_thickness.value(),
                                 output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem, color=self.contour_app.highlight_color)
@@ -138,13 +138,18 @@ class ContourApp(QWidget):
         self.viewer.updateView()
         self.viewer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.viewer.setAlignment(QtCore.Qt.AlignTop)
-        self.image_path = sys.argv[1]
-        """Denoise"""
-        print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        self.cv2_image = cv2.cvtColor(cv2.imread(self.image_path), cv2.COLOR_BGR2RGB)
-        self.cv2_image = cv2.fastNlMeansDenoisingColored(self.cv2_image.copy(), None, 10, 10, 7, 21)
-        print("[{}] Finished denoising".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        self.__originalH__, self.__originalW__, self.__originalD__ = self.cv2_image.shape
+
+       ### Add image and contours ###
+        self.image_path = Path(sys.argv[1])
+        self.denoised_path = Path("{}/{}.denoise{}".format(self.image_path.parent.as_posix(), self.image_path.stem, self.image_path.suffix))
+        if self.denoised_path.exists():
+            print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
+            self.cv2_image = cv2.imread(self.denoised_path.as_posix())
+        else:
+            print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+            self.cv2_image = cv2.fastNlMeansDenoisingColored(cv2.imread(self.image_path.as_posix()), None, 10, 10, 7, 21)
+            cv2.imwrite(filename=self.denoised_path.as_posix(), img=self.cv2_image)
+            print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
 
         # Get contours
         self.contours = mcf(image=self.cv2_image)
@@ -247,21 +252,38 @@ class ContourApp(QWidget):
         self.grid_layout.addWidget(self.setAmax, 8, 10)
 
         ### Scale bar info
+        self.scaleBar = None
+        self.scaleBarLength = None
+        self.scaleBarUnits = None
+        self.lengthPerPixel = None
+
         self.scalePixels = QLineEdit()
         self.scalePixels.setPlaceholderText("Pixels")
-        self.grid_layout.addWidget(self.scalePixels, 9, 8, 1, 1)
+        self.grid_layout.addWidget(self.scalePixels, 9, 8, 1, 2)
+
+        self.pixelLabel = QLabel("Pixels")
+        self.grid_layout.addWidget(self.pixelLabel, 9, 10, 1, 1)
 
         self.scaleLength = QLineEdit()
         self.scaleLength.setPlaceholderText("Length")
-        self.grid_layout.addWidget(self.scaleLength, 9, 9, 1, 1)
-        
-        self.setScale = QPushButton("Set scale")
-        self.grid_layout.addWidget(self.setScale, 9,10)
+        self.grid_layout.addWidget(self.scaleLength, 10, 8, 1, 2)
 
-        # ### Generate parameters for CLI ###
+        self.lengthLabel = QLabel("Length")
+        self.grid_layout.addWidget(self.lengthLabel, 10, 10, 1, 1)
+
+        self.setScale = QPushButton("Set scale")
+        self.grid_layout.addWidget(self.setScale, 11, 8, 1, 1)
+
+        self.detectScale = QPushButton("Detect scale")
+        self.grid_layout.addWidget(self.detectScale, 11, 9, 1, 1)
+
+        self.clearScaleInfo = QPushButton("Clear scale")
+        self.grid_layout.addWidget(self.clearScaleInfo, 11, 10, 1, 1)
+
+        ### Generate parameters for CLI ###
         self.CLIgenerator = QPushButton()
         self.CLIgenerator.setText("Copy CLI parameters to clipboard")
-        self.grid_layout.addWidget(self.CLIgenerator, 10, 8, 1, 3)
+        self.grid_layout.addWidget(self.CLIgenerator, 12, 8, 1, 2)
 
         ### Text box ###
         self.box = QPlainTextEdit()
@@ -270,16 +292,16 @@ class ContourApp(QWidget):
         ### Reset parameters ###
         self.resetParams = QPushButton()
         self.resetParams.setText("Reset parameters")
-        self.grid_layout.addWidget(self.resetParams, 11, 8, 1, 3)
+        self.grid_layout.addWidget(self.resetParams, 12, 10, 1, 1)
 
         ### Color picker ###
         self.contour_colorPicker = QPushButton()
         self.contour_colorPicker.setText("Contour color")
-        self.grid_layout.addWidget(self.contour_colorPicker, 12, 8, 1, 3)
+        self.grid_layout.addWidget(self.contour_colorPicker, 13, 8, 1, 1)
 
         self.highlight_colorPicker = QPushButton()
-        self.highlight_colorPicker.setText("Highlight color")
-        self.grid_layout.addWidget(self.highlight_colorPicker, 13, 8, 1, 3)
+        self.highlight_colorPicker.setText("Selected color")
+        self.grid_layout.addWidget(self.highlight_colorPicker, 13, 9, 1, 1)
 
         ### Contour thickness ###
         self.contour_thickness = QSlider(QtCore.Qt.Horizontal)
@@ -289,30 +311,30 @@ class ContourApp(QWidget):
         self.contour_thickness.setTickPosition(QSlider.TicksBelow)
         self.thickness_label = QLabel()
         self.thickness_label.setText('Contour thickness: {}'.format(self.contour_thickness.value()))
-        self.grid_layout.addWidget(self.thickness_label, 13, 10)
-        self.grid_layout.addWidget(self.contour_thickness, 13, 8, 1, 2)
+        self.grid_layout.addWidget(self.thickness_label, 14, 10)
+        self.grid_layout.addWidget(self.contour_thickness, 14, 8, 1, 2)
 
         ### Contour selection ###
         self.select_contours = QCheckBox("Select contours")
-        self.grid_layout.addWidget(self.select_contours, 14, 8, 1, 1)
+        self.grid_layout.addWidget(self.select_contours, 13, 10, 1, 1)
         self.select_contours.stateChanged.connect(self.selectContoursChecked)
 
         ### Approximate polygons ###
-        self.use_approxPolys = QCheckBox("Use approximate polygons")
-        self.grid_layout.addWidget(self.use_approxPolys, 14, 9, 1, 1)
+        self.use_approxPolys = QCheckBox("Approximate polygons (epsilon)")
+        self.grid_layout.addWidget(self.use_approxPolys, 15, 8, 1, 1)
         self.epsilon = QSlider(QtCore.Qt.Horizontal)
-        self.epsilon.setRange(1, 50)
-        self.epsilon.setValue(3)
+        self.epsilon.setRange(1, 20)
+        self.epsilon.setValue(1)
         self.epsilon.setTickInterval(1)
         self.epsilon.setTickPosition(QSlider.TicksBelow)
         self.epsilon_label = QLabel()
         self.epsilon_label.setText('episilon: {}'.format(self.epsilon.value()))
-        self.grid_layout.addWidget(self.epsilon_label, 15, 10)
-        self.grid_layout.addWidget(self.epsilon, 15, 8, 1, 2)
+        self.grid_layout.addWidget(self.epsilon_label, 16, 10)
+        self.grid_layout.addWidget(self.epsilon, 16, 8, 1, 2)
 
         ### Convex hulls ###
         self.use_convexHulls = QCheckBox("Use convex hulls")
-        self.grid_layout.addWidget(self.use_convexHulls, 14, 10, 1, 1)
+        self.grid_layout.addWidget(self.use_convexHulls, 15, 9, 1, 1)
 
         ### Connections ###
         # Sliders -> plots
@@ -341,6 +363,10 @@ class ContourApp(QWidget):
         self.setAmin.clicked.connect(self.update_plot)
         self.Amax.returnPressed.connect(self.update_plot)
         self.setAmax.clicked.connect(self.update_plot)
+
+        # Scale bars
+        self.detectScale.clicked.connect(self.detectClicked)
+        self.clearScaleInfo.clicked.connect(self.clearScale)
         
         ### Misc. buttons ###
         # Generator push button
@@ -356,6 +382,29 @@ class ContourApp(QWidget):
         # Connect photo click and rubberband
         self.viewer.photoClicked.connect(self.photoClicked)
         self.viewer.rectChanged.connect(self.rectChange)
+        self.update_plot()
+
+    def detectClicked(self):
+        scaleBarInfo = get_scalebar_info(self.cv2_image)
+        print(scaleBarInfo)
+        if len(scaleBarInfo) == 2:
+            self.scaleBar, self.scaleBarLength = scaleBarInfo
+        elif len(scaleBarInfo) == 4:
+            self.scaleBar, self.scaleBarLength, self.lengthPerPixel, self.scaleBarUnits = scaleBarInfo
+            self.lengthLabel.setText("{}".format(self.scaleBarUnits))
+
+        self.scalePixels.setText("{}".format(1))
+        self.scaleLength.setText("{}".format(self.lengthPerPixel))
+        print(self.scaleBar)
+        print(self.scaleBarLength)
+        self.update_plot()
+
+    def clearScale(self):
+        self.scaleBar = None
+        self.scaleBarUnits = None
+        self.scaleLength.setText("Length")
+        self.scalePixels.setText("Pixels")
+        self.lengthLabel.setText("Length")
         self.update_plot()
 
     def photoClicked(self, pos):
@@ -462,6 +511,8 @@ class ContourApp(QWidget):
                 self.large_contours = [cv2.convexHull(c) for c in self.large_contours]
 
         cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=self.contour_thickness.value())
+        if (self.scaleBar is not None) and (self.scaleBarLength > 0):
+            cv2.line(self.cv2_image, (self.scaleBar[0], self.scaleBar[1]), (self.scaleBar[2], self.scaleBar[3]), (0,255,0),5)
         if len(self.contour_DF) > 0:
             cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=self.contour_thickness.value())
 
