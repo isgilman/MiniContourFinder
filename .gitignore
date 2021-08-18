@@ -1,19 +1,15 @@
-Data/C3_images/*
-Data/Calindrinia/*
-Data/large_images/*
-Data/Portulaca/*
-Data/SampleSheet/numbers
-Data/*
+# Local files
 Data/
-Scripts/__pycache__/*
 *.pyc
 */.DS_Store
-Notebooks/.ipynb_checkpoints/*
+Notebooks/.ipynb_checkpoints/
 Notebooks/Detection_sandbox.ipynb
-Notes/*
+Notes/
+Setup/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
+Scripts/__pycache__/
 *.py[cod]
 *$py.class
 
