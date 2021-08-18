@@ -5,18 +5,20 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="MiniContourFinder",
-    version="1.0.7",
+    version="1.0.8",
     author="Ian S Gilman",
     author_email="ian.gilman@yale.edu",
     description="Lightweight image segmentation software for biological images",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/isgilman/MiniContourFinder",
-    packages=["MCF"],
+    packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
         "Operating System :: OS Independent",
+        "Topic :: Scientific/Engineering :: Image Processing",
+        "Intended Audience :: Science/Research",
     ],
     install_requires=[
         "opencv-python >= 4.5.2",
@@ -26,5 +28,8 @@ setuptools.setup(
         "PyQt5 >= 5.12.3",
         "pytesseract >= 0.3.0",
         "tqdm >= 4.36.1"
-    ]
+    ],
+    entry_points={
+        'console_scripts':[
+            'MCF=MCF.MCF:main']}
 )

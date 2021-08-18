@@ -8,10 +8,12 @@ source:
 requirements:
   host:
     - python
-    - setuptools
   build:
     - python
+    - setuptools
   run:
+    - matplotlib
+    - numpy
     - pillow
     - py-opencv
     - pyperclip
@@ -19,7 +21,7 @@ requirements:
     - pytesseract
     - python
     - pandas
-    - jupyter
+    - scipy
     - tqdm
 
 about:
