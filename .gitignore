@@ -3,6 +3,8 @@ Data/Calindrinia/*
 Data/large_images/*
 Data/Portulaca/*
 Data/SampleSheet/numbers
+Data/*
+Data/
 Scripts/__pycache__/*
 *.pyc
 */.DS_Store
