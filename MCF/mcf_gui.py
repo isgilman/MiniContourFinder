@@ -725,7 +725,7 @@ class GraphicsView(QtWidgets.QGraphicsView):
 
         super(GraphicsView, self).mouseReleaseEvent(event)
 
-if __name__ == '__main__':
+def main():
     print("""
    __  ___   _          _               
   /  |/  /  (_)  ___   (_)              
@@ -744,3 +744,6 @@ if __name__ == '__main__':
     w = MainWindow()
     w.show()
     app.exec_()
+
+if __name__ == '__main__':
+    main()

@@ -1,6 +1,6 @@
 package:
   name: "minicontourfinder"
-  version: "1.0.13"
+  version: "1.0.14"
 
 source:
   git_url: https://github.com/isgilman/MiniContourFinder
