@@ -7,8 +7,9 @@ from datetime import datetime
 # image recognition
 from pathlib import Path
 # Custom utilities
-from helpers import *
-from imagetools import *
+# from helpers import *
+from MCF.helpers import *
+from MCF.imagetools import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -92,7 +93,7 @@ def main():
     else:
         prefix = args.prefix
 
-    print("[{}] MCF command:\n\t python MCF.py --prefix {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d}".format(
+    print("[{}] command:\n\t python mcf.py --prefix {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d}".format(
         datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, args.neighborhood, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, int(args.Amin), int(args.Amax)))
 
     if args.input.startswith("~/"):

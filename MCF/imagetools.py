@@ -22,7 +22,7 @@ from pytesseract import image_to_string
 from PyQt5.QtGui import QPixmap, QImage
 
 # Custom utils
-from helpers import *
+from MCF.helpers import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def flood_fill(image, progress_bar=True):
@@ -395,7 +395,12 @@ def process_image(image_path, neighborhood=10, prefix=None, Amin=50, Amax=10e6, 
         denoise = cv2.imread(denoised_path.as_posix())
     else:
         print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        denoise = cv2.fastNlMeansDenoisingColored(cv2.imread(image_path.as_posix()), None, 10, 10, 7, 21)
+        try:
+            denoise = cv2.fastNlMeansDenoisingColored(cv2.imread(image_path.as_posix()), None, 10, 10, 7, 21)
+        except cv2.error:
+            converted = cv2.cvt(cv2.imread(image_path.as_posix()), cv2.COLOR_GRAY2BGR)
+            denoise = cv2.fastNlMeansDenoisingColored(converted, None, 10, 10, 7, 21)
+
         cv2.imwrite(filename=denoised_path.as_posix(), img=denoise)
         print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), denoised_path.as_posix()))
 

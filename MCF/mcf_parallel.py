@@ -11,8 +11,8 @@ from multiprocessing import Pool, set_start_method
 import cv2
 from pathlib import Path
 # Custom utilities
-from helpers import *
-from imagetools import *
+from MCF.helpers import *
+from MCF.imagetools import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     else:
         prefix = args.prefix
 
-    print("[{}] MCF command:\n\t python MCF-parallel.py --prefix {} --stepsize {} --winW {} --winH {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d} --cpus {}".format(
+    print("[{}] command:\n\t python mcf_parallel.py --prefix {} --stepsize {} --winW {} --winH {} --neighborhood {} --dpi {} --debug {} --k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {:d} --cpus {}".format(
         datetime.now().strftime('%d %b %Y %H:%M:%S'), args.prefix, stepsize, winW, winH, args.neighborhood, args.dpi, args.debug, args.k_blur, args.C, args.blocksize, args.k_laplacian, args.k_dilate, args.k_gradient, args.k_foreground, int(args.Amin), int(args.Amax), args.cpus))
     if args.cpus == "AUTO":
         cpus = get_cpus_avail()

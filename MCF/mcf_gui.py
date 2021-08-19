@@ -16,8 +16,8 @@ import matplotlib
 if sys.platform == 'darwin':
     matplotlib.use("TkAgg")
 # Custom utilities
-from helpers import *
-from imagetools import *
+from MCF.helpers import *
+from MCF.imagetools import *
 
 class MainWindow(QMainWindow):
     def __init__(self):

@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="MiniContourFinder",
-    version="1.0.8",
+    version="1.0.13",
     author="Ian S Gilman",
     author_email="ian.gilman@yale.edu",
     description="Lightweight image segmentation software for biological images",
@@ -21,15 +21,22 @@ setuptools.setup(
         "Intended Audience :: Science/Research",
     ],
     install_requires=[
+        "matplotlib >= 3.1.1",
+        "numpy > 1.20.3",
         "opencv-python >= 4.5.2",
+        "pandas >= 0.25.2",
         "pillow >= 6.2.1",
         "Pillow",
         "pyperclip >= 1.7.0",
         "PyQt5 >= 5.12.3",
         "pytesseract >= 0.3.0",
+        "scipy >= 1.6.3",
         "tqdm >= 4.36.1"
     ],
     entry_points={
         'console_scripts':[
-            'MCF=MCF.MCF:main']}
+            'mcf=MCF.mcf:main',
+            'mcf_gui=MCF.mcf_gui:main',
+            'mcf_parallel=MCF.mcf_parallel:main'
+            ]}
 )
