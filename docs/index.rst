@@ -7,11 +7,13 @@ Welcome to MiniContourFinder's documentation!
 =============================================
 
 .. toctree::
-   :maxdepth: 
+   :maxdepth: 2
    :caption: Contents:
 
 .. toctree::
    installation.md
+   guiguide.md
+   cliguide.md
 
 
 
