@@ -11,7 +11,7 @@ Welcome to MiniContourFinder's documentation!
    :caption: Contents:
 
 .. toctree::
-   myfile.md
+   installation.md
 
 
 

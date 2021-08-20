@@ -18,11 +18,15 @@ import matplotlib.pyplot as plt
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
 # image related
 import cv2
+from PIL import Image
 from pytesseract import image_to_string
 from PyQt5.QtGui import QPixmap, QImage
 
 # Custom utils
-from MCF.helpers import *
+try:
+    from helpers import *
+except ModuleNotFoundError:
+    from MCF.helpers import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def flood_fill(image, progress_bar=True):
@@ -327,8 +331,12 @@ def render_contour_plots(image, border_contour, contours, prefix, dpi=300, outpu
     matplotlib.use("PDF")
     # Get figure size
     if type(image)==str:
-        image = cv2.imread(image)
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        try:
+            image = cv2.imread(image)
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        except cv2.error:
+            image = vector2cv2(image.as_posix())
+
     height, width, _ = image.shape
     figsize = width / float(dpi), height / float(dpi)
 
@@ -382,25 +390,26 @@ def process_image(image_path, neighborhood=10, prefix=None, Amin=50, Amax=10e6, 
         print("[{}] Working directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), os.getcwd()))
         print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir))
     input_path = Path(image_path)
-    image = cv2.imread(str(input_path))
+    image = cv2.imread(input_path.as_posix())
+    if image == None:
+        image = vector2cv2(image_path.as_posix())
+
     if not prefix:
         prefix = input_path.stem
     if debug:
         print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), input_path.absolute()))
 
     """Denoise"""
-    denoised_path = Path("{}/{}.denoise{}".format(image_path.parent.as_posix(), image_path.stem, image_path.suffix))
-    if denoised_path.exists():
-        print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), denoised_path.as_posix()))
+    wdir = image_path.parent
+    results = wdir.glob("{}.denoise.*".format(image_path.stem))
+    try:
+        denoised_path = next(results)
         denoise = cv2.imread(denoised_path.as_posix())
-    else:
+        print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), denoised_path.as_posix()))
+    except StopIteration:
         print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-        try:
-            denoise = cv2.fastNlMeansDenoisingColored(cv2.imread(image_path.as_posix()), None, 10, 10, 7, 21)
-        except cv2.error:
-            converted = cv2.cvt(cv2.imread(image_path.as_posix()), cv2.COLOR_GRAY2BGR)
-            denoise = cv2.fastNlMeansDenoisingColored(converted, None, 10, 10, 7, 21)
-
+        denoise = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+        denoised_path = Path("{}/{}.denoise{}".format(wdir.as_posix(), image_path.stem, ".png"))
         cv2.imwrite(filename=denoised_path.as_posix(), img=denoise)
         print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), denoised_path.as_posix()))
 
@@ -545,6 +554,10 @@ def read_units(scalebar_img):
 
     return scalebar_length, scalebar_units
 
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+def vector2cv2(file_path):
+    """Converts a vector image to a BGR cv2 format."""
+    return np.array(Image.open(file_path))[:,:,::-1]
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def get_scalebar_info(image, plot=False, **kwargs):

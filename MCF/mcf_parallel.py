@@ -11,8 +11,12 @@ from multiprocessing import Pool, set_start_method
 import cv2
 from pathlib import Path
 # Custom utilities
-from MCF.helpers import *
-from MCF.imagetools import *
+try:
+    from helpers import *
+    from imagetools import *
+except ModuleNotFoundError:
+    from MCF.helpers import *
+    from MCF.imagetools import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -161,15 +165,29 @@ if __name__ == "__main__":
         print("[{}] Working directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), os.getcwd()))
         print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir_path))
 
-    image = cv2.imread(str(input_path))
+    image = cv2.imread(input_path.as_posix())
+    if image == None:
+        image = vector2cv2(image_path.as_posix())
+
     if not prefix:
         prefix = input_path.stem
-    if args.debug:
+    if debug:
         print("[{}] Input file: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), input_path.absolute()))
 
     """Denoise"""
-    print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-    denoise = cv2.fastNlMeansDenoisingColored(image.copy(), None, 10, 10, 7, 21)
+    wdir = image_path.parent
+    results = wdir.glob("{}.denoise.*".format(image_path.stem))
+    try:
+        denoised_path = next(results)
+        denoise = cv2.imread(denoised_path.as_posix())
+        print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), denoised_path.as_posix()))
+    except StopIteration:
+        print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
+        denoise = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+        denoised_path = Path("{}/{}.denoise{}".format(wdir.as_posix(), image_path.stem, ".png"))
+        cv2.imwrite(filename=denoised_path.as_posix(), img=denoise)
+        print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), denoised_path.as_posix()))
+
     print("[{}] Getting image border...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
     border_contour = mcf(image=denoise, extract_border=True, **kwargs)
 

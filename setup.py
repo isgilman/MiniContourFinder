@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="MiniContourFinder",
-    version="1.0.14",
+    version="1.0.15",
     author="Ian S Gilman",
     author_email="ian.gilman@yale.edu",
     description="Lightweight image segmentation software for biological images",

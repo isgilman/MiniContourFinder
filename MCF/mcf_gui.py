@@ -16,8 +16,12 @@ import matplotlib
 if sys.platform == 'darwin':
     matplotlib.use("TkAgg")
 # Custom utilities
-from MCF.helpers import *
-from MCF.imagetools import *
+try:
+    from helpers import *
+    from imagetools import *
+except ModuleNotFoundError:
+    from MCF.helpers import *
+    from MCF.imagetools import *
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -138,14 +142,22 @@ class ContourApp(QWidget):
 
         ### Add image and contours ###
         self.image_path = Path(sys.argv[1])
-        self.denoised_path = Path("{}/{}.denoise{}".format(self.image_path.parent.as_posix(), self.image_path.stem, self.image_path.suffix))
-        if self.denoised_path.exists():
-            print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
+        image = cv2.imread(self.image_path.as_posix())
+        if image == None:
+            image = vector2cv2(self.image_path.as_posix())
+
+        wdir = self.image_path.parent
+        results = wdir.glob("{}.denoise.*".format(self.image_path.stem))
+        try:
+            self.denoised_path = next(results)
             self.cv2_image = cv2.imread(self.denoised_path.as_posix())
-        else:
+            print("[{}] Found existing denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
+        except StopIteration:
             print("[{}] Denoising image...".format(datetime.now().strftime('%d %b %Y %H:%M:%S')))
-            self.cv2_image = cv2.fastNlMeansDenoisingColored(cv2.imread(self.image_path.as_posix()), None, 10, 10, 7, 21)
+            self.cv2_image = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+            self.denoised_path = Path("{}/{}.denoise{}".format(wdir.as_posix(), self.image_path.stem, ".png"))
             cv2.imwrite(filename=self.denoised_path.as_posix(), img=self.cv2_image)
+
             print("[{}] Created temporary denoised file ({})".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), self.denoised_path.as_posix()))
 
         # Get contours

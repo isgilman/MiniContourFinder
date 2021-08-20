@@ -7,9 +7,12 @@ from datetime import datetime
 # image recognition
 from pathlib import Path
 # Custom utilities
-# from helpers import *
-from MCF.helpers import *
-from MCF.imagetools import *
+try:
+    from helpers import *
+    from imagetools import *
+except ModuleNotFoundError:
+    from MCF.helpers import *
+    from MCF.imagetools import *
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
