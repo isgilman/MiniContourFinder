@@ -8,18 +8,7 @@ Welcome to MiniContourFinder's documentation!
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
-.. toctree::
    installation.rst
    guiguide.rst
    cliguide.rst
-
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`

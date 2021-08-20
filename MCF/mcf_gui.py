@@ -143,7 +143,7 @@ class ContourApp(QWidget):
         ### Add image and contours ###
         self.image_path = Path(sys.argv[1])
         image = cv2.imread(self.image_path.as_posix())
-        if image == None:
+        if image is None:
             image = vector2cv2(self.image_path.as_posix())
 
         wdir = self.image_path.parent
