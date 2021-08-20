@@ -22,7 +22,7 @@ copyright = '2021, Ian S Gilman'
 author = 'Ian S Gilman'
 
 # The full version, including alpha/beta/rc tags
-release = '1.0.15'
+release = '1.0.16'
 
 
 # -- General configuration ---------------------------------------------------
