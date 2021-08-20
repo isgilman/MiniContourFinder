@@ -11,9 +11,9 @@ Welcome to MiniContourFinder's documentation!
    :caption: Contents:
 
 .. toctree::
-   installation.md
-   guiguide.md
-   cliguide.md
+   installation.rst
+   guiguide.rst
+   cliguide.rst
 
 
 

@@ -1,1 +1,0 @@
-# MiniContourFinder CLI
