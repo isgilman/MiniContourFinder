@@ -1,12 +1,16 @@
-************
-Installation
-************
+===============
+Getting started
+===============
+
+##########
+Installing
+##########
 
 Trying to install bioinformatics software can often lead to headaches, so I've dedicated a lot of time to making MiniContourFinder easy to install regardless of operating system. However, installing and using MiniContourFinder requires basic knowledge of the command line and either of the common package manager `pip <https://pip.pypa.io/en/stable/#>`_ or `conda <https://conda.io/projects/conda/en/latest/user-guide/install/index.html>`_.
 
-###############
+***************
 ``pip`` install
-###############
+***************
 
 Currently, the easiest way to install MiniContourFinder is with ``pip``. Chances are that you already have ``pip`` installed because it comes prepackaged with Python (at least since ``v3.4``/``v2.7.9``). To check if ``pip`` is installed, open up a terminal and check if the following outputs look similar.
 
@@ -39,9 +43,28 @@ It will produce an output detailing the requirements that were already satisfied
 
   Successfully installed MiniContourFinder-1.0.14...
 
-#############
+.. attention::
+
+  ``ModuleNotFoundError: No module named 'Image'``
+
+There are `well documented <https://stackoverflow.com/questions/26505958/why-cant-python-import-image-from-pil>`_ problems installing the module ``Image`` from ``PIL``, ``pillow``, or ``Pillow``. If ``pip`` begins to install MiniContourFinder, but it exits with a ``ModuleNotFoundError`` that looks similar to
+
+.. code-block:: bash
+
+  ModuleNotFoundError: No module named 'Image'
+  ----------------------------------------
+  ERROR: Command errored out with exit status 1: python setup.py egg_info Check the logs for full command output.
+
+then you'll have to install ``Pillow`` yourself with ``pip`` before installing MiniContourFinder.
+
+.. code-block:: bash
+
+  $ pip install Pillow
+  $ pip install MiniContourFinder
+
+*************
 Conda install
-#############
+*************
 
 I've also published MiniContourFinder on Anaconda, `here <https://anaconda.org/iangilman/minicontourfinder>`_, but the install isn't functional yet. In the future, conda will be the prefered installation platform. To check if ``conda`` is already installed, you can enter ``conda info`` in a terminal, which should print information about your installation.
 
@@ -67,9 +90,9 @@ After following all the prompts and reading the license you should have ``conda`
 
 Now when you type ``conda info`` in your terminal you should return the installation info.
 
-##############
+**************
 GitHub install
-##############
+**************
 
 MiniContourFinder can be installed by cloning the `GitHub repo <https://github.com/isgilman/MiniContourFinder>`_.
 
@@ -79,9 +102,9 @@ MiniContourFinder can be installed by cloning the `GitHub repo <https://github.c
   $ cd MiniContourFinder
   $ python setup.py install
 
-###########################
+***************************
 Verifying your installation
-###########################
+***************************
 
 I haven't gotten around to writing install tests yet, but you can check to see that your install is working by typing
 

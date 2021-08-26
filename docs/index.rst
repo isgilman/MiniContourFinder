@@ -7,7 +7,7 @@ Welcome to MiniContourFinder's documentation!
 =============================================
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 3
 
    installation.rst
    guiguide.rst

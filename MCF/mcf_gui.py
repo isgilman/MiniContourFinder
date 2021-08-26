@@ -64,8 +64,8 @@ class MainWindow(QMainWindow):
 
         if saveDialog[0] != '':
             if len(self.contour_app.contour_DF) == 0 :
-                export_data = pd.DataFrame(np.zeros(shape=(len(self.contour_app.large_contours), 10)), 
-                columns=["uuid4", "contour", "C", "kBlur", "blocksize", "kLaplacian","kDilate", "kGradient", "kForeground", "Amin", "Amax"], dtype=object)
+                export_data = pd.DataFrame(np.zeros(shape=(len(self.contour_app.large_contours), 9)), 
+                columns=["uuid4", "contour", "C", "kBlur", "blocksize", "kLaplacian","kDilate", "kGradient", "kForeground"], dtype=object)
                 export_data["contour"] = self.contour_app.large_contours
                 export_data["uuid4"] = [uuid.uuid4().hex for i in range(len(self.contour_app.large_contours))]
                 export_data["C"] = self.contour_app.C.value()
@@ -262,6 +262,7 @@ class ContourApp(QWidget):
 
         ### Scale bar info
         self.scaleBar = None
+        self.scaleBarUnits = None
         self.scaleBarPixelLength = None
         self.scaleBarUnitLength = None
         self.unitsPerPixel = None

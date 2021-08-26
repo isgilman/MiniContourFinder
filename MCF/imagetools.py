@@ -360,7 +360,7 @@ def render_contour_plots(image, border_contour, contours, prefix, dpi=300, outpu
     cv2.drawContours(canvas, contours=contours, contourIdx=-1, color=color, thickness=contour_thickness)
     for i, c in enumerate(contours):
         cX,cY = contour_xy(c)
-        ax.text(x=cX, y=cY, s=u"{}".format(i), color="black", size=8)
+        ax.text(x=cX, y=cY, s=u"{}".format(i), color="black", size=5)
 
     ax.imshow(canvas)
     ax.axis('off')

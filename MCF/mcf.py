@@ -40,7 +40,7 @@ def main():
                     help="new prefix for output files. By default the new files will reflect the input file's basename")
     parser.add_argument("-D", "--detectScaleBar", metavar='', type=bool,    
                     default=False, action="store", dest="detectScaleBar",
-                    help="automated scale bar detection.")
+                    help="automated scale bar detection. Default=False")
     parser.add_argument("-d", "--dpi", metavar='', type=int, default=300,
                     action="store", dest="dpi",
                     help="Output image resolution in pixels. Default=300")
