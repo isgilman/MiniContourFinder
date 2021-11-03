@@ -391,7 +391,7 @@ def process_image(image_path, neighborhood=10, prefix=None, Amin=50, Amax=10e6, 
         print("[{}] Output directory: {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), output_dir))
     input_path = Path(image_path)
     image = cv2.imread(input_path.as_posix())
-    if image == None:
+    if image is None:
         image = vector2cv2(image_path.as_posix())
 
     if not prefix:

@@ -29,62 +29,218 @@ class MainWindow(QMainWindow):
         # Initialize window
         self.setWindowTitle('MCF - {}'.format(sys.argv[1]))
         self.resize(1000, 400)
-        # Add toolbar with menu
+
+        # Initialize widget with layout
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        # Set contour app as central widget
+        self.contourApp = ContourApp(self)
+        layout.addWidget(self.contourApp)
+        self.setCentralWidget(widget)
+        self.contourApp.updatePlot()
+        self.contourApp.viewer.updateView()
+
+        '''Add toolbar'''
         toolbar = QToolBar()
         self.addToolBar(toolbar)
 
         saveFile = QAction("&Save", self)
         saveFile.setShortcut("Ctrl+S")
         saveFile.setStatusTip("Save File")
-        saveFile.triggered.connect(self.saveAll)
+        saveFile.triggered.connect(self._saveAll)
         toolbar.addAction(saveFile)
 
         openFile = QAction("&Open", self)
         openFile.setShortcut("Ctrl+O")
         openFile.setStatusTip('Open File')
-        openFile.triggered.connect(self.file_open)
+        openFile.triggered.connect(self._fileOpen)
         toolbar.addAction(openFile)
 
-        # Initialize widget with layout
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        # Set contour app as central widget
-        self.contour_app = ContourApp(self)
-        layout.addWidget(self.contour_app)
-        self.setCentralWidget(widget)
-        self.contour_app.update_plot()
-        self.contour_app.viewer.updateView()
+        copyCLI = QAction("&Copy CLI command", self)
+        copyCLI.setShortcut("Ctrl+C")
+        copyCLI.setStatusTip('Copy CLI')
+        copyCLI.triggered.connect(self._copyCLI)
+        toolbar.addAction(copyCLI)
+
+        contourColor = QAction("&Contour color", self)
+        contourColor.setStatusTip('Change contour color')
+        contourColor.triggered.connect(self._contourColorSelection)
+        toolbar.addAction(contourColor)
+
+        selectedColor = QAction("&Selected color", self)
+        selectedColor.setStatusTip('Change selected contour color')
+        selectedColor.triggered.connect(self._selectedColorSelection)
+        toolbar.addAction(selectedColor)
+
+        lineThickness = QAction("&Line thickness", self)
+        lineThickness.setStatusTip('Line thickness')
+        lineThickness.triggered.connect(self._setLineThickness)
+        toolbar.addAction(lineThickness)
+
+        detectScale = QAction("&Detect scale", self)
+        detectScale.setStatusTip('Detect scale')
+        detectScale.triggered.connect(self._detectScale)
+        toolbar.addAction(detectScale)
+
+        drawScaleBar = QAction("&Draw scale bar", self)
+        drawScaleBar.setStatusTip('Draw scale')
+        drawScaleBar.triggered.connect(self._drawScaleBar)
+        toolbar.addAction(drawScaleBar)
+
+        setScale = QAction("&Set scale", self)
+        setScale.setStatusTip('Set scale')
+        setScale.triggered.connect(self._setScale)
+        toolbar.addAction(setScale)
+
+        clearScale = QAction("&Clear scale", self)
+        clearScale.setStatusTip('Clear scale')
+        clearScale.triggered.connect(self._clearScale)
+        toolbar.addAction(clearScale)
+
+        resetParameters = QAction("&Reset parameters", self)
+        resetParameters.setStatusTip('Reset parameters')
+        resetParameters.triggered.connect(self._resetParameters)
+        toolbar.addAction(resetParameters)
 
         self.show()
-     
-    def saveAll(self):
+
+    def _resetParameters(self):
+        self.contourApp.k_blur.setValue(5)
+        self.contourApp.C.setValue(3)
+        self.contourApp.blocksize.setValue(8)
+        self.contourApp.k_laplacian.setValue(3)
+        self.contourApp.k_dilate.setValue(3)
+        self.contourApp.k_gradient.setValue(2)
+        self.contourApp.k_foreground.setValue(4)
+        self.contourApp.epsilon.setValue(3)
+        self.contourApp.Amin.clear()
+        self.contourApp.Amax.clear()
+        self.contourApp.updatePlot()
+        self.contourApp.updateText()
+
+    def _drawScaleBar(self):
+        if self.contourApp.select_contours.isChecked():
+            print("Cannot draw scale bar while selecting contours")
+            return
+        else:
+            self._clearScale()
+            self.contourApp.drawing = True
+            self.contourApp.scaleBar = []
+
+    def _setScale(self):
+        scaleDialog = TripleInputDialog()
+        if self.contourApp.scaleBarPixelLength is not None:
+            scaleDialog.first.setPlaceholderText(str(self.contourApp.scaleBarPixelLength))
+        if self.contourApp.scaleBarUnitLength is not None:
+            scaleDialog.second.setPlaceholderText(str(self.contourApp.scaleBarUnitLength))
+        if self.contourApp.scaleBarUnits is not None:
+            scaleDialog.third.setPlaceholderText(str(self.contourApp.scaleBarUnits))
+
+        if scaleDialog.exec():
+            try:
+                self.contourApp.scaleBarPixelLength = int(eval(scaleDialog.getInputs()[0]))
+                self.contourApp.scaleBarUnitLength = float(eval(scaleDialog.getInputs()[1]))
+                self.contourApp.scaleBarUnits = scaleDialog.getInputs()[2]
+            except ValueError:
+                print("Invalid scale inputs")
+                return
+
+    def _detectScale(self):
+        scaleBarInfo = get_scalebar_info(self.contourApp.cv2_image)
+        if scaleBarInfo is not None:
+            if len(scaleBarInfo) == 2:
+                self.contourApp.scaleBar = scaleBarInfo[0]
+                self.contourApp.scaleBarPixelLength = scaleBarInfo[1]
+            elif len(scaleBarInfo) == 4:
+                self.contourApp.scaleBar = scaleBarInfo[0]
+                self.contourApp.scaleBarPixelLength = scaleBarInfo[1]
+                self.contourApp.scaleBarUnitLength = scaleBarInfo[2]
+                self.contourApp.scaleBarUnits = scaleBarInfo[3]
+            else:
+                self.contourApp.scaleBar = None
+                print("Error reading scalebar. Try again or set manually.")
+        else:
+            self.contourApp.scaleBar = None
+            
+        self.contourApp.updatePlot()
+
+    def _clearScale(self):
+        self.contourApp.scaleBar = None
+        self.contourApp.scaleBarPixelLength = None
+        self.contourApp.scaleBarUnitLength = None
+        self.contourApp.scaleBarUnits = None
+        self.contourApp.drawing = False
+        self.contourApp.updatePlot()
+
+    def _setLineThickness(self):
+        thicknessDialog, ok = QInputDialog.getText(self, "Set line thickness", "Line thickness")
+        if ok:
+            try:
+                self.contourApp.contourThickness = int(eval(thicknessDialog[0]))
+                self.contourApp.updatePlot()
+            except ValueError:
+                print("Invalid thickness input")
+                return
+        else:
+            return
+
+    def _contourColorSelection(self):
+        self.contourApp.contour_color = QColorDialog.getColor().getRgb()[:3][::-1]
+        self.contourApp.updatePlot()
+
+    def _selectedColorSelection(self):
+        self.contourApp.highlight_color = QColorDialog.getColor().getRgb()[:3][::-1]
+        self.contourApp.updatePlot()
+
+    def _copyCLI(self):
+        cb = QApplication.clipboard()
+        cb.clear(mode=cb.Clipboard)
+        try: Amin = int(self.contourApp.Amin.text())
+        except ValueError: Amin = int(1)
+        try: Amax = int(self.contourApp.Amax.text())
+        except ValueError: Amax = int(self.contourApp.cv2_image.shape[0]* self.contourApp.cv2_image.shape[1])
+
+        CLItext = "--k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {}".format(
+                2 * self.contourApp.k_blur.value() - 1,
+                self.contourApp.C.value(),
+                2 * self.contourApp.blocksize.value() - 1,
+                2 * self.contourApp.k_laplacian.value() - 1,
+                2 * self.contourApp.k_dilate.value() - 1,
+                2 * self.contourApp.k_gradient.value() - 1,
+                2 * self.contourApp.k_foreground.value() - 1,
+                Amin, 
+                Amax)
+        cb.setText(CLItext, mode=cb.Clipboard)
+        pyperclip.copy(CLItext)
+
+    def _saveAll(self):
         saveDialog = QFileDialog.getSaveFileName(parent=self, 
         caption="File prefix",
         directory=Path(Path(sys.argv[1]).parent / Path(sys.argv[1]).stem).as_posix())
 
         if saveDialog[0] != '':
-            if len(self.contour_app.contour_DF) == 0 :
-                export_data = pd.DataFrame(np.zeros(shape=(len(self.contour_app.large_contours), 9)), 
+            if len(self.contourApp.contour_DF) == 0 :
+                export_data = pd.DataFrame(np.zeros(shape=(len(self.contourApp.large_contours), 9)), 
                 columns=["uuid4", "contour", "C", "kBlur", "blocksize", "kLaplacian","kDilate", "kGradient", "kForeground"], dtype=object)
-                export_data["contour"] = self.contour_app.large_contours
-                export_data["uuid4"] = [uuid.uuid4().hex for i in range(len(self.contour_app.large_contours))]
-                export_data["C"] = self.contour_app.C.value()
-                export_data["kBlur"] = self.contour_app.k_blur.value()
-                export_data["blocksize"] = self.contour_app.blocksize.value()
-                export_data["kLaplacian"] = self.contour_app.k_laplacian.value()
-                export_data["kDilate"] = self.contour_app.k_dilate.value()
-                export_data["kGradient"] = self.contour_app.k_gradient.value()
-                export_data["kForeground"] = self.contour_app.k_foreground.value()
+                export_data["contour"] = self.contourApp.large_contours
+                export_data["uuid4"] = [uuid.uuid4().hex for i in range(len(self.contourApp.large_contours))]
+                export_data["C"] = self.contourApp.C.value()
+                export_data["kBlur"] = self.contourApp.k_blur.value()
+                export_data["blocksize"] = self.contourApp.blocksize.value()
+                export_data["kLaplacian"] = self.contourApp.k_laplacian.value()
+                export_data["kDilate"] = self.contourApp.k_dilate.value()
+                export_data["kGradient"] = self.contourApp.k_gradient.value()
+                export_data["kForeground"] = self.contourApp.k_foreground.value()
             else:
-                export_data = self.contour_app.contour_DF
+                export_data = self.contourApp.contour_DF
 
-            export_contour_data(image=sys.argv[1], contourDF=export_data, conversion_factor=self.contour_app.unitsPerPixel, units=self.contour_app.scaleBarUnits,
+            export_contour_data(image=sys.argv[1], contourDF=export_data, conversion_factor=self.contourApp.unitsPerPixel, units=self.contourApp.scaleBarUnits,
                                 output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem)
-            render_contour_plots(image=sys.argv[1], contours=export_data["contour"].values, border_contour=None, contour_thickness=self.contour_app.contour_thickness.value(),
-                                output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem, color=self.contour_app.highlight_color)
+            render_contour_plots(image=sys.argv[1], contours=export_data["contour"].values, border_contour=None, contour_thickness=self.contourThickness,
+                                output_dir=Path(saveDialog[0]).parent, prefix=Path(saveDialog[0]).stem, color=self.contourApp.highlight_color)
         else: return
 
-    def file_open(self):
+    def _fileOpen(self):
         fileFilter = 'Contour data file (*.json)'
         openDialog = QFileDialog.getOpenFileName(self, 
             caption = "Open contour data file (.json)",
@@ -92,16 +248,16 @@ class MainWindow(QMainWindow):
             filter = fileFilter)
 
         if openDialog[0] != '':
-            self.contour_app.select_contours.setChecked(True)
+            self.contourApp.select_contours.setChecked(True)
             loaded = pd.read_json(openDialog[0])
-            loaded = loaded[self.contour_app.contour_DF.columns]
+            loaded = loaded[self.contourApp.contour_DF.columns]
             loaded['contour'] = loaded['contour'].apply(np.array)
             print("[{}] Loaded {} contours from {}".format(datetime.now().strftime('%d %b %Y %H:%M:%S'), len(loaded), openDialog[0]))
-            self.contour_app.contour_DF = self.contour_app.contour_DF.append(loaded)
-            self.contour_app.update_plot()
+            self.contourApp.contour_DF = self.contourApp.contour_DF.append(loaded)
+            self.contourApp.updatePlot()
         else:return
 
-    def closeEvent(self, event):
+    def _closeEvent(self, event):
         """Generate 'question' dialog on clicking 'X' button in title bar.
 
         Reimplement the closeEvent() event handler to include a 'Question'
@@ -127,20 +283,20 @@ class ContourApp(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent=parent)
 
-        ### Create window with grid layout ###
+        ''' Create window with grid layout '''
         self.grid_layout = QGridLayout()
         self.setLayout(self.grid_layout)
         self.click_x, self.click_y = (0,0)
         self.setMouseTracking(True)
 
-        ### Initialize viewer ###
+        ''' Initialize viewer '''
         self.viewer = GraphicsView(self)
         self.grid_layout.addWidget(self.viewer, 0, 0, -1, 8) # Note that grid coords are (row, col, rowspan, colspan)
         self.viewer.updateView()
         self.viewer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
         self.viewer.setAlignment(QtCore.Qt.AlignTop)
 
-        ### Add image and contours ###
+        ''' Add image and contours '''
         self.image_path = Path(sys.argv[1])
         image = cv2.imread(self.image_path.as_posix())
         if image is None:
@@ -164,17 +320,26 @@ class ContourApp(QWidget):
         self.contours = mcf(image=self.cv2_image)
         self.contour_color = (255, 0, 0)
         self.highlight_color = (255, 0, 255)
+        self.contourThickness = 3
         self.contour_DF = pd.DataFrame(columns=["uuid4", "contour", "C", "kBlur", "blocksize", "kLaplacian", "kDilate", "kGradient", "kForeground"], dtype=object)
-        cv2.drawContours(self.cv2_image, contours=self.contours, contourIdx=-1, color=self.contour_color, thickness=3)
+        cv2.drawContours(self.cv2_image, contours=self.contours, contourIdx=-1, color=self.contour_color, thickness=self.contourThickness)
         if len(self.contour_DF)>0:
-            cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=3)
+            cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=self.contourThickness)
 
         # Convert to Qimage object
         self.pixmap = cv2pixmap(self.cv2_image)
         self.viewer.setPhoto(self.pixmap)
         self.viewer.updateView()
 
-        ### Create sliders ###
+        ''' Scale bar info '''
+        self.scaleBar = None
+        self.scaleBarUnits = None
+        self.scaleBarPixelLength = None
+        self.scaleBarUnitLength = None
+        self.unitsPerPixel = None
+        self.drawing = False
+
+        ''' Create sliders'''
         self.k_blur = QSlider(QtCore.Qt.Horizontal)
         self.k_blur.setRange(2, 26)
         self.k_blur.setValue(5)
@@ -247,7 +412,7 @@ class ContourApp(QWidget):
 
         self.sliders = [self.k_blur, self.C, self.blocksize, self.k_laplacian, self.k_dilate, self.k_gradient, self.k_foreground]
 
-        ### Set contour size ###
+        ''' Set contour size '''
         self.Amin = QLineEdit()
         self.Amin.setPlaceholderText("Minimum contour area")
         self.setAmin = QPushButton("Enter")
@@ -260,80 +425,19 @@ class ContourApp(QWidget):
         self.grid_layout.addWidget(self.Amax, 8, 8, 1, 2)
         self.grid_layout.addWidget(self.setAmax, 8, 10)
 
-        ### Scale bar info
-        self.scaleBar = None
-        self.scaleBarUnits = None
-        self.scaleBarPixelLength = None
-        self.scaleBarUnitLength = None
-        self.unitsPerPixel = None
-
-        self.pixelLengthField = QLineEdit()
-        self.pixelLengthField.setPlaceholderText("Length in pixels")
-        self.grid_layout.addWidget(self.pixelLengthField, 9, 8, 1, 2)
-        self.pixelLabel = QLabel("Pixels")
-        self.grid_layout.addWidget(self.pixelLabel, 9, 10, 1, 1)
-
-        self.unitLengthField = QLineEdit()
-        self.unitLengthField.setPlaceholderText("Length in units")
-        self.grid_layout.addWidget(self.unitLengthField, 10, 8, 1, 2)
-        self.unitsLabel = QLabel("Length")
-        self.grid_layout.addWidget(self.unitsLabel, 10, 10, 1, 1)
-
-        self.setScaleButton = QPushButton("Set scale")
-        self.grid_layout.addWidget(self.setScaleButton, 11, 8, 1, 1)
-
-        self.detectScaleButton = QPushButton("Detect scale")
-        self.grid_layout.addWidget(self.detectScaleButton, 11, 9, 1, 1)
-
-        self.clearScaleButton = QPushButton("Clear scale")
-        self.grid_layout.addWidget(self.clearScaleButton, 12, 8, 1, 1)
-
-        self.drawing = False
-        self.drawScaleButton = QPushButton("Draw scale bar")
-        self.grid_layout.addWidget(self.drawScaleButton, 12, 9, 1, 1)
-
-        ### Generate parameters for CLI ###
-        self.CLIgenerator = QPushButton()
-        self.CLIgenerator.setText("Copy CLI parameters")
-        self.grid_layout.addWidget(self.CLIgenerator, 11, 10, 1, 1)
-
-        ### Text box ###
-        self.box = QPlainTextEdit()
-        self.box.insertPlainText("--k_blur 9 --C 3 --blocksize 15 --k_laplacian 5 --k_dilate 5 --k_gradient 3 --k_foreground 7 --Amin 50 --Amax 10e6")
-
-        ### Reset parameters ###
-        self.resetParams = QPushButton()
-        self.resetParams.setText("Reset parameters")
-        self.grid_layout.addWidget(self.resetParams, 12, 10, 1, 1)
-
-        ### Color picker ###
-        self.contour_colorPicker = QPushButton()
-        self.contour_colorPicker.setText("Contour color")
-        self.grid_layout.addWidget(self.contour_colorPicker, 13, 8, 1, 1)
-
-        self.highlight_colorPicker = QPushButton()
-        self.highlight_colorPicker.setText("Selected color")
-        self.grid_layout.addWidget(self.highlight_colorPicker, 13, 9, 1, 1)
-
-        ### Contour thickness ###
-        self.contour_thickness = QSlider(QtCore.Qt.Horizontal)
-        self.contour_thickness.setRange(1, 10)
-        self.contour_thickness.setValue(3)
-        self.contour_thickness.setTickInterval(1)
-        self.contour_thickness.setTickPosition(QSlider.TicksBelow)
-        self.thickness_label = QLabel()
-        self.thickness_label.setText('Contour thickness: {}'.format(self.contour_thickness.value()))
-        self.grid_layout.addWidget(self.thickness_label, 14, 10)
-        self.grid_layout.addWidget(self.contour_thickness, 14, 8, 1, 2)
-
-        ### Contour selection ###
+        ''' Contour selection '''
         self.select_contours = QCheckBox("Select contours")
-        self.grid_layout.addWidget(self.select_contours, 13, 10, 1, 1)
+        self.grid_layout.addWidget(self.select_contours, 9, 10, 1, 1)
         self.select_contours.stateChanged.connect(self.selectContoursChecked)
 
-        ### Approximate polygons ###
+        self.select_all = QPushButton()
+        self.select_all.setText("Select all")
+        self.unselect_all = QPushButton()
+        self.unselect_all.setText("Unselect all")
+
+        ''' Approximate polygons '''
         self.use_approxPolys = QCheckBox("Approximate polygons (epsilon)")
-        self.grid_layout.addWidget(self.use_approxPolys, 15, 8, 1, 1)
+        self.grid_layout.addWidget(self.use_approxPolys, 9, 8, 1, 1)
         self.epsilon = QSlider(QtCore.Qt.Horizontal)
         self.epsilon.setRange(1, 20)
         self.epsilon.setValue(1)
@@ -341,107 +445,44 @@ class ContourApp(QWidget):
         self.epsilon.setTickPosition(QSlider.TicksBelow)
         self.epsilon_label = QLabel()
         self.epsilon_label.setText('episilon: {}'.format(self.epsilon.value()))
-        self.grid_layout.addWidget(self.epsilon_label, 16, 10)
-        self.grid_layout.addWidget(self.epsilon, 16, 8, 1, 2)
+        self.grid_layout.addWidget(self.epsilon_label, 10, 10)
+        self.grid_layout.addWidget(self.epsilon, 10, 8, 1, 2)
 
-        ### Convex hulls ###
+        ''' Convex hulls '''
         self.use_convexHulls = QCheckBox("Use convex hulls")
-        self.grid_layout.addWidget(self.use_convexHulls, 15, 9, 1, 1)
+        self.grid_layout.addWidget(self.use_convexHulls, 9, 9, 1, 1)
 
-        ### Connections ###
+        ''' Connections '''
         # Sliders -> plots
-        self.k_blur.valueChanged.connect(self.update_plot)
-        self.C.valueChanged.connect(self.update_plot)
-        self.blocksize.valueChanged.connect(self.update_plot)
-        self.k_laplacian.valueChanged.connect(self.update_plot)
-        self.k_dilate.valueChanged.connect(self.update_plot)
-        self.k_gradient.valueChanged.connect(self.update_plot)
-        self.k_foreground.valueChanged.connect(self.update_plot)
-        self.contour_thickness.valueChanged.connect(self.update_plot)
-        self.epsilon.valueChanged.connect(self.update_plot)
+        self.k_blur.valueChanged.connect(self.updatePlot)
+        self.C.valueChanged.connect(self.updatePlot)
+        self.blocksize.valueChanged.connect(self.updatePlot)
+        self.k_laplacian.valueChanged.connect(self.updatePlot)
+        self.k_dilate.valueChanged.connect(self.updatePlot)
+        self.k_gradient.valueChanged.connect(self.updatePlot)
+        self.k_foreground.valueChanged.connect(self.updatePlot)
+        self.epsilon.valueChanged.connect(self.updatePlot)
+        
         # Sliders -> text
-        self.k_blur.valueChanged.connect(self.update_text)
-        self.C.valueChanged.connect(self.update_text)
-        self.blocksize.valueChanged.connect(self.update_text)
-        self.k_laplacian.valueChanged.connect(self.update_text)
-        self.k_dilate.valueChanged.connect(self.update_text)
-        self.k_gradient.valueChanged.connect(self.update_text)
-        self.k_foreground.valueChanged.connect(self.update_text)
-        self.contour_thickness.valueChanged.connect(self.update_text)
-        self.epsilon.valueChanged.connect(self.update_text)
+        self.k_blur.valueChanged.connect(self.updateText)
+        self.C.valueChanged.connect(self.updateText)
+        self.blocksize.valueChanged.connect(self.updateText)
+        self.k_laplacian.valueChanged.connect(self.updateText)
+        self.k_dilate.valueChanged.connect(self.updateText)
+        self.k_gradient.valueChanged.connect(self.updateText)
+        self.k_foreground.valueChanged.connect(self.updateText)
+        self.epsilon.valueChanged.connect(self.updateText)
         
         # Line edits -> plots
-        self.Amin.returnPressed.connect(self.update_plot)
-        self.setAmin.clicked.connect(self.update_plot)
-        self.Amax.returnPressed.connect(self.update_plot)
-        self.setAmax.clicked.connect(self.update_plot)
+        self.Amin.returnPressed.connect(self.updatePlot)
+        self.setAmin.clicked.connect(self.updatePlot)
+        self.Amax.returnPressed.connect(self.updatePlot)
+        self.setAmax.clicked.connect(self.updatePlot)
 
-        # Scale bars
-        self.pixelLengthField.returnPressed.connect(self.setScale)
-        self.unitLengthField.returnPressed.connect(self.setScale)
-        self.detectScaleButton.clicked.connect(self.detectScale)
-        self.clearScaleButton.clicked.connect(self.clearScale)
-        self.drawScaleButton.clicked.connect(self.drawScaleBar)
-        
-        ### Misc. buttons ###
-        # Generator push button
-        self.CLIgenerator.clicked.connect(self.on_CLIgenerator_clicked)
-        self.CLIgenerator.clicked.connect(self.copy_CLI)
-        # Reset push button
-        self.resetParams.clicked.connect(self.on_reset_clicked)
-        self.resetParams.clicked.connect(self.update_text)
-        self.resetParams.clicked.connect(self.update_plot)
-        # Color picker button
-        self.contour_colorPicker.clicked.connect(self.update_contour_color)
-        self.highlight_colorPicker.clicked.connect(self.update_highlight_color)
         # Connect photo click and rubberband
         self.viewer.photoClicked.connect(self.photoClicked)
         self.viewer.rectChanged.connect(self.rectChange)
-        self.update_plot()
-
-    def drawScaleBar(self):
-        if self.select_contours.isChecked():
-            print("Cannot draw scale bar while selecting contours")
-            return
-        else:
-            self.clearScale()
-            self.drawing = True
-            self.scaleBar = []
-
-    def setScale(self):
-        try:
-            self.scaleBarPixelLength = eval(self.pixelLengthField)
-            self.scaleBarUnitLength = eval(self.unitLengthField)
-            self.unitsPerPixel = self.scaleBarUnitLength/self.scaleBarPixelLength
-            print("Conversion factor: {} units/pixel".format(self.unitsPerPixel))
-        except TypeError:
-            print("Both number of pixels and a length must be set to create a scaling factor")
-            return
-        except NameError:
-            print("Both the number of pixels and length must be numbers")
-            return
-
-    def detectScale(self):
-        scaleBarInfo = get_scalebar_info(self.cv2_image)
-        if len(scaleBarInfo) == 2:
-            self.scaleBar, self.scaleBarPixelLength = scaleBarInfo
-        elif len(scaleBarInfo) == 4:
-            self.scaleBar, self.scaleBarPixelLength, self.scaleBarUnitLength, self.scaleBarUnits = scaleBarInfo
-            self.unitsLabel.setText("{}".format(self.scaleBarUnits))
-
-        self.pixelLengthField.setText("{}".format(self.scaleBarPixelLength))
-        self.unitLengthField.setText("{}".format(self.scaleBarUnitLength))
-        self.update_plot()
-
-    def clearScale(self):
-        self.scaleBar = None
-        self.scaleBarPixelLength = None
-        self.scaleBarUnitLength = None
-        self.scaleBarUnits = None
-        self.pixelLengthField.setText("Length in pixels")
-        self.unitLengthField.setText("Length in units")
-        self.unitsLabel.setText("Units")
-        self.update_plot()
+        self.updatePlot()
 
     def photoClicked(self, pos):
         if self.select_contours.isChecked():
@@ -470,36 +511,36 @@ class ContourApp(QWidget):
                             self.contour_DF = self.contour_DF.reset_index(drop=True)
                             break            
             else: return
-            self.update_plot()
+            self.updatePlot()
 
         elif self.drawing:
             if len(self.scaleBar) == 0:
                 self.scaleBar.append(pos.x())
                 self.scaleBar.append(pos.y())
                 self.scaleBarPixelLength = None
-                self.update_plot()
+                self.updatePlot()
             elif len(self.scaleBar) == 2:
                 self.scaleBar.append(pos.x())
                 self.scaleBar.append(pos.y())
                 self.scaleBarPixelLength = np.sqrt((self.scaleBar[2]-self.scaleBar[0])**2+(self.scaleBar[3]-self.scaleBar[1])**2)
-                self.pixelLengthField.setText("{}".format(self.scaleBarPixelLength))
-                self.update_plot()
+                self.updatePlot()
 
-                _, okPressed = QInputDialog.getDouble(self, "Length in units", "Length:", 1, 0)
-                if okPressed:
-                    self.scaleBarUnitLength = _
-                    _, okPressed = QInputDialog.getText(self, "Scale bar units", "Units:", QLineEdit.Normal, "\u03BC"+"m")
-                    self.unitLengthField.setText(str(self.scaleBarUnitLength))
-                    if okPressed and _!='':
-                        self.scaleBarUnits = _
-                        self.unitsLabel.setText(self.scaleBarUnits)
-                else:        
-                    self.unitLengthField.setText("Length in units")
-                    self.unitsLabel.setText("Units")
-                self.drawing = False
+                scaleDialog = TripleInputDialog()
+                scaleDialog.first.setText(str(self.scaleBarPixelLength))
+
+                if scaleDialog.exec():
+                    try:
+                        self.scaleBarPixelLength = int(eval(scaleDialog.getInputs()[0]))
+                        self.scaleBarUnitLength = float(eval(scaleDialog.getInputs()[1]))
+                        self.scaleBarUnits = scaleDialog.getInputs()[2]
+                    except ValueError:
+                        print("Invalid scale inputs") 
             else:
-                self.clearScale()
-                self.drawing = False        
+                self.scaleBar = None
+                self.scaleBarPixelLength = None
+                self.scaleBarUnitLength = None
+                self.scaleBarUnits = None
+                self.drawing = False 
         else:
             return
 
@@ -536,7 +577,7 @@ class ContourApp(QWidget):
                 self.contour_DF = self.contour_DF.reset_index(drop=True)
             else: return
             
-            self.update_plot()
+            self.updatePlot()
 
     def selectContoursChecked(self):
         if self.select_contours.isChecked():
@@ -549,9 +590,9 @@ class ContourApp(QWidget):
                 slider.setEnabled(True)
 
     def resizeEvent(self, event):
-        self.update_plot()
+        self.updatePlot()
 
-    def update_plot(self):
+    def updatePlot(self):
         # Clear image
         QPixmapCache.clear()
         # If actively tuning contours...
@@ -577,7 +618,7 @@ class ContourApp(QWidget):
             if self.use_convexHulls.isChecked():
                 self.large_contours = [cv2.convexHull(c) for c in self.large_contours]
 
-        cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=self.contour_thickness.value())
+        cv2.drawContours(self.cv2_image, contours=self.large_contours, contourIdx=-1, color=self.contour_color, thickness=self.contourThickness)
         # Add scale bar
         if self.scaleBar is not None:
             if self.drawing:
@@ -589,22 +630,15 @@ class ContourApp(QWidget):
                 cv2.line(self.cv2_image, (self.scaleBar[0], self.scaleBar[1]), (self.scaleBar[2], self.scaleBar[3]), (0,255,0),5)
 
         if len(self.contour_DF) > 0:
-            cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=self.contour_thickness.value())
+            cv2.drawContours(self.cv2_image, contours=self.contour_DF["contour"].values, contourIdx=-1, color=self.highlight_color, thickness=self.contourThickness)
 
         # Convert to QImage
         self.pixmap = cv2pixmap(self.cv2_image)
         self.viewer.setPhoto(self.pixmap)
         self.viewer.updateView()
 
-    def update_contour_color(self):
-        self.contour_color = QColorDialog.getColor().getRgb()
-        self.update_plot()
 
-    def update_highlight_color(self):
-        self.highlight_color = QColorDialog.getColor().getRgb()
-        self.update_plot()
-
-    def update_text(self):
+    def updateText(self):
         self.blur_label.setText('k_blur: {}'.format(2*self.k_blur.value()-1))
         self.C_label.setText('C: {}'.format(self.C.value()))
         self.blocksize_label.setText('blocksize: {}'.format(2*self.blocksize.value()-1))
@@ -612,42 +646,7 @@ class ContourApp(QWidget):
         self.dilate_label.setText('k_dilate: {}'.format(2*self.k_dilate.value()-1))
         self.gradient_label.setText('k_gradient: {}'.format(2*self.k_gradient.value()-1))
         self.foreground_label.setText('k_foreground: {}'.format(2*self.k_foreground.value()-1))
-        self.thickness_label.setText('Contour thickness: {}'.format(self.contour_thickness.value()))
         self.epsilon_label.setText('epsilon: {}'.format(self.epsilon.value()))
-
-    def on_CLIgenerator_clicked(self):
-        try: Amin = int(self.Amin.text())
-        except ValueError: Amin = int(1)
-        try: Amax = int(self.Amax.text())
-        except ValueError: Amax = int(10e6)
-        self.box.clear()
-        self.box.insertPlainText("--k_blur {} --C {} --blocksize {} --k_laplacian {} --k_dilate {} --k_gradient {} --k_foreground {} --Amin {} --Amax {}".format(
-                2 * self.k_blur.value() - 1,
-                self.C.value(),
-                2 * self.blocksize.value() - 1,
-                2 * self.k_laplacian.value() - 1,
-                2 * self.k_dilate.value() - 1,
-                2 * self.k_gradient.value() - 1,
-                2 * self.k_foreground.value() - 1,
-                Amin, Amax))
-
-    def copy_CLI(self):
-        cb = QApplication.clipboard()
-        cb.clear(mode=cb.Clipboard)
-        cb.setText(self.box.toPlainText(), mode=cb.Clipboard)
-        pyperclip.copy(self.box.toPlainText())
-
-    def on_reset_clicked(self):
-        self.k_blur.setValue(5)
-        self.C.setValue(3)
-        self.blocksize.setValue(8)
-        self.k_laplacian.setValue(3)
-        self.k_dilate.setValue(3)
-        self.k_gradient.setValue(2)
-        self.k_foreground.setValue(4)
-        self.epsilon.setValue(3)
-        self.Amin.clear()
-        self.Amax.clear()
 
 class GraphicsView(QtWidgets.QGraphicsView):
     photoClicked = QtCore.pyqtSignal(QtCore.QPoint)

@@ -2,6 +2,7 @@
 # coding: utf-8
 
 import sys, os, re, subprocess, platform
+from PyQt5.QtWidgets import QLineEdit, QDialog, QDialogButtonBox, QFormLayout
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def flatten(l):
@@ -61,3 +62,25 @@ class Vividict(dict):
     def __missing__(self, key):
         value = self[key] = type(self)() # retain local pointer to value
         return value                     # faster to return than dict lookup
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+class TripleInputDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+        self.first = QLineEdit(self)
+        self.second = QLineEdit(self)
+        self.third = QLineEdit(self)
+        buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self);
+
+        layout = QFormLayout(self)
+        layout.addRow("Length in pixels", self.first)
+        layout.addRow("Length in units", self.second)
+        layout.addRow("Units", self.third)
+        layout.addWidget(buttonBox)
+
+        buttonBox.accepted.connect(self.accept)
+        buttonBox.rejected.connect(self.reject)
+
+    def getInputs(self):
+        return (self.first.text(), self.second.text(), self.third.text())
