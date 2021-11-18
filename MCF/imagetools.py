@@ -306,6 +306,7 @@ def export_contour_data(contourDF:pd.DataFrame, prefix:str, image:np.ndarray, co
         contourDF["RBG"] = np.array(list(map(getContourRBG, contourDF["contour"].values)), dtype=object)
 
     # Export
+    contourDF = contourDF.drop("selected", axis=1)
     contourDF.to_csv(Path(output_dir) / "{}.contour_data.csv".format(prefix), index=False)
     contourDF.to_json(Path(output_dir) / "{}.contour_data.json".format(prefix))
 
@@ -608,51 +609,50 @@ def get_scalebar_info(image, plot=False, **kwargs):
     print("Detected scalebar but could not read units.")
     return scalebar, length_in_pixels
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-def RectangleOverlapTest(image, contours, x, y, width, height, REMOVE=False):
+def RectangleOverlapTest(image, contourDF, x, y, width, height, REMOVE=False):
     """Finds contours that overlap with a rectangle.
 
     Parameters
     ----------
     image <numpy.ndarray> : Image which contours are from
-    contours <list>: A list of contours
+    contourDF <pd.DataFrame>: A pandas data frame with initial contours
     x <int> : Left rectangle side
     y <int> : Top rectangle side
     width <int> : Rectangle width
     height <int> : Rectangle height
+    REMOVE <bool> : Remove contours that overlap with rectangle. Default = False
 
     Returns
     -------
-    selected <list> : A list of contours
+    contourDF <list> : A pandas data frame with resulting contours
     """
     blank = np.zeros(image.shape[0:2])
     rectangle = cv2.rectangle(blank.copy(), (x, y), (x + width, y + height), 1, cv2.FILLED)
     rect_x, rect_y = (x + (width / 2), y + (height / 2))
     if REMOVE:
         rm_idx = []
-        for i, c in tqdm(enumerate(contours), desc='RectangleOverlapTest', leave=False):
-            (min_c_x, min_c_y), min_c_r = cv2.minEnclosingCircle(c)
+        for i, row in contourDF[contourDF["selected"]==True].iterrows():
+            (min_c_x, min_c_y), min_c_r = cv2.minEnclosingCircle(row["contour"])
             if abs(min_c_x - rect_x) > (width / 2) + (min_c_r): continue
             if abs(min_c_y - rect_y) > (height / 2) + (min_c_r): continue
 
-            current = cv2.drawContours(blank.copy(), contours, i, 1, cv2.FILLED)
+            current = cv2.drawContours(blank.copy(), row["contour"], -1, 1, cv2.FILLED)
             overlap = np.logical_and(current, rectangle)
             if overlap.any():
-                rm_idx.append(i)
+                contourDF.loc[i, "selected"] = False
         
-        return [i for j, i in enumerate(contours) if j not in rm_idx]
-
     else:
-        selected = []
-        for i, c in tqdm(enumerate(contours), desc='RectangleOverlapTest', leave=False):
-            (min_c_x, min_c_y), min_c_r = cv2.minEnclosingCircle(c)
+        for i, row in contourDF[contourDF["selected"]==False].iterrows():
+            (min_c_x, min_c_y), min_c_r = cv2.minEnclosingCircle(row["contour"])
             if abs(min_c_x - rect_x) > (width / 2) + (min_c_r): continue
             if abs(min_c_y - rect_y) > (height / 2) + (min_c_r): continue
 
-            current = cv2.drawContours(blank.copy(), contours, i, 1, cv2.FILLED)
+            current = cv2.drawContours(blank.copy(), row["contour"], -1, 1, cv2.FILLED)
             overlap = np.logical_and(current, rectangle)
             if overlap.any():
-                selected.append(c)
-        return selected
+                contourDF.loc[i, "selected"] = True
+    
+    return contourDF
 
 #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def ContourOverlapTest(image, contours, background_contours, return_overlapping=True):
